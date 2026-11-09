@@ -106,7 +106,7 @@
         in
         {
           default = p.pkgs.mkShell {
-            packages = [ virtualenv p.pkgs.uv p.pkgs.opentofu ];
+            packages = [ virtualenv p.pkgs.uv p.pkgs.opentofu p.pkgs.jq ];
             env = {
               UV_NO_SYNC = "1";
               UV_PYTHON = "${p.python.interpreter}";

@@ -96,3 +96,8 @@ export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
 # or
 gcloud auth application-default login
 ```
+
+In this repo, `.envrc` points `GOOGLE_APPLICATION_CREDENTIALS` at the agenix
+`gcloud-auth` secret (`/run/agenix/gcloud-auth`) when it is readable, and derives
+`GOOGLE_PROJECT` / `GOOGLE_CLOUD_PROJECT` / `CLOUDSDK_CORE_PROJECT` plus the
+`TF_VAR_*` equivalents from the key. Run `direnv allow` after editing `.envrc`.

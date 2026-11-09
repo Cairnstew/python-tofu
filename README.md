@@ -18,9 +18,22 @@ drive `tofu init/plan/apply/destroy` through one CLI.
 - **Hermetic builds** — the repo is a uv2nix flake; `nix build` produces a
   self-contained application.
 
+## Credentials
+
+On a machine with this repo's agenix secrets, `.envrc` exports the
+`gcloud-auth` service-account key automatically:
+
+- `GOOGLE_APPLICATION_CREDENTIALS=/run/agenix/gcloud-auth`
+- `GOOGLE_PROJECT` / `GOOGLE_CLOUD_PROJECT` / `CLOUDSDK_CORE_PROJECT`, derived
+  from the key's `project_id`
+- `TF_VAR_gcp_credentials_file` and `TF_VAR_project` for Terraform-style stacks
+
+Run `direnv allow` once after changing `.envrc`. Without the secret, the shell
+still works and the standard ADC mechanisms apply.
+
 ## Quick start
 
-The dev shell provides Python, `uv`, `pytest` and OpenTofu:
+The dev shell provides Python, `uv`, `pytest`, `jq` and OpenTofu:
 
 ```bash
 nix develop

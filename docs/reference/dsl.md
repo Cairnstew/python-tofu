@@ -4,6 +4,14 @@ The DSL lives in `src/python_tofu/models/`. Every model is a frozen Pydantic
 model with `extra="forbid"`; unknown fields and invalid GCP identifiers fail at
 import time.
 
+## Credentials
+
+The Google provider uses Application Default Credentials by default. The
+repository's `.envrc` exports `GOOGLE_APPLICATION_CREDENTIALS` from the agenix
+`gcloud-auth` service-account key when it is readable. You can also set
+`GcpProvider.credentials` to an explicit key path; prefer the environment/agenix
+route so credentials never enter the Python config.
+
 ## `GcpStack`
 
 | Field | Type | Default | Description |

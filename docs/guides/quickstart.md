@@ -9,6 +9,10 @@
 OpenTofu is included in the dev shell. Outside it, install `tofu` or point
 `--binary` at an OpenTofu binary.
 
+On this machine `.envrc` exports the agenix `gcloud-auth` service-account key as
+`GOOGLE_APPLICATION_CREDENTIALS` (plus the derived project variables) when the
+secret is readable. Run `direnv allow` once after changing `.envrc`.
+
 ## 1. Enter the development environment
 
 ```bash
