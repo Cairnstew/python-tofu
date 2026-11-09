@@ -1,0 +1,82 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "python-tofu"
+dynamic = ["version"]
+description = "Typed Python DSL and CLI wrapper for managing GCP infrastructure with OpenTofu"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Sean Cairns", email = "sean@example.com" }]
+keywords = ["opentofu", "tofu", "gcp", "infrastructure", "iac", "python", "nix"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+    "Topic :: System :: Systems Administration",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+    "pydantic>=2.7",
+    "rich>=13",
+]
+
+[project.scripts]
+python-tofu = "python_tofu.cli.main:app"
+
+[tool.hatch.version]
+path = "src/python_tofu/__init__.py"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=5",
+    "mypy>=1.10",
+    "ruff>=0.4",
+    "pip-audit>=2.6",
+    "bandit>=1.7",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["python_tofu"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["I"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "nix: requires nix in PATH (skip with -m 'not nix')",
+    "integration: CLI subprocess tests",
+]
+testpaths = ["tests"]
+addopts = "-v"
+
+[tool.bandit]
+exclude_dirs = ["tests", ".tofu", "examples"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*"]
+
+[tool.coverage.paths]
+source = ["src"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
