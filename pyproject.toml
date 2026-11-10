@@ -21,6 +21,8 @@ dependencies = [
     "typer>=0.12",
     "pydantic>=2.7",
     "rich>=13",
+    "google-auth>=2.30",
+    "requests>=2.32",
 ]
 
 [project.scripts]
@@ -57,6 +59,10 @@ known-first-party = ["python_tofu"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
+
+[[tool.mypy.overrides]]
+module = ["google.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

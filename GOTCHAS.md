@@ -30,6 +30,66 @@ via `git rev-parse --show-toplevel`. If you're not in a git repo, set it manuall
 Nixpkgs Python builders set `PYTHONPATH`, which leaks into unrelated builds. Always unset it in the
 dev shell `shellHook`.
 
+## Provider layout
+
+### Core must not import providers
+`python_tofu.core` is deliberately provider-blind. If core imports
+`python_tofu.providers.*`, adding or swapping a provider creates an import cycle
+and breaks the plugin seam. Provider-specific rules belong in
+`providers/<name>/`; core only uses the `Provider` dataclass.
+
+### Top-level modules are shims
+`python_tofu/models/`, `python_tofu/services/`, `python_tofu/hcl.py`,
+`python_tofu/loader.py` and `python_tofu/exceptions.py` re-export core/GCP
+symbols for compatibility. Add real code to `core/` or `providers/gcp/`, not to
+a shim, or the two layouts drift.
+
+### CLI commands are provider factories
+Each command exposes `create_app(provider)`; there is no module-level command
+`app` anymore. The GCP binding lives in `python_tofu/cli/main.py`
+(`build_app(GCP, version=__version__)`). Keep command implementations free of
+GCP imports.
+
+## Limits
+
+### Free-tier figures change
+Limits are copied from https://cloud.google.com/free/docs/free-cloud-features
+into `providers/gcp/limits.py`. Google changes them with 30 days' notice; re-read
+the page before relying on a number, and update the policy and its test together.
+
+### Free tier is per billing account
+Most GCP free-tier limits apply per billing account, not per project. A stack
+usually describes one project, so `usage_estimates` must cover the whole billing
+account for an accurate check. Firestore and Logging are per project.
+
+### Limits are estimates, not metering
+The policy checks what the stack declares (`estimated_size_gb`, `usage_estimates`)
+and, with `--usage live`, what Cloud Asset Inventory reports. Neither sees data
+growth, object traffic or per-request usage. It is a pre-flight guardrail; use
+Cloud Billing budgets for a financial backstop.
+
+### Cloud Asset Inventory: POST 404s, use GET
+`searchAllResources` returns an HTML 404 on `POST` against this API version even
+though the API is enabled; the same call as `GET` with query parameters returns
+200. `assets.list` (`contentType=RESOURCE`) is also GET and is what
+`providers/gcp/live.py` uses for resource fields.
+
+### Inventory has no byte sizes
+Cloud Asset Inventory returns bucket/disk metadata but no bucket size, object
+count, BigQuery bytes or egress. Those limits stay `unknown` under
+`--usage live`; they need Cloud Monitoring or a Billing BigQuery export. Never
+map "not in inventory" to `0` — that is the silent-pass bug `unknown` prevents.
+
+### Live checks are project-scoped; free tier is billing-account-scoped
+`live_measure_usage` lists assets in the stack's project. Other projects under
+the same billing account are invisible, so live numbers are a lower bound. Free
+tier is per billing account (Firestore and Logging excepted).
+
+
+### Aggregates are normalised, not summed units
+An `AggregateLimit` adds `used / amount` ratios, not raw GB or requests. Two
+limits at 60% each produce `1.2`, which exceeds the default `amount=1.0`.
+
 ## Python / HCL
 
 ### Hatchling build backend
@@ -107,6 +167,12 @@ for VM tests or guard with explicit platform detection.
 ### Python version mismatch
 `flake.nix` uses `pkgs.python312`. `pyproject.toml` says `requires-python = ">=3.12"`. Keep these
 in sync.
+
+### Nix ignores untracked files
+`nix build` and `nix flake check` evaluate the git tree, not the working
+directory: new files must be `git add`-ed or the build silently uses the old
+source. Symptom after adding a package: a fresh `ModuleNotFoundError` for the
+new module in the packaged app while `pytest`/`nix develop` pass.
 
 ### nixpkgs-fmt
 `checks.format` runs `nixpkgs-fmt --check` over the repo. Run

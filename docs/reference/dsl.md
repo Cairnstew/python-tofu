@@ -1,8 +1,11 @@
 # DSL Reference
 
-The DSL lives in `src/python_tofu/models/`. Every model is a frozen Pydantic
-model with `extra="forbid"`; unknown fields and invalid GCP identifiers fail at
-import time.
+The GCP DSL lives in `src/python_tofu/providers/gcp/models.py` and
+`src/python_tofu/providers/gcp/stack.py`; `python_tofu.models` re-exports it for
+backwards compatibility. Every model is a frozen Pydantic model with
+`extra="forbid"`; unknown fields and invalid GCP identifiers fail at import
+time. Provider-agnostic primitives (`TofuModel`, `BaseStack`) live in
+`python_tofu.core.models`.
 
 ## Credentials
 
@@ -26,6 +29,7 @@ route so credentials never enter the Python config.
 | `external_projects` | `list[str]` | `[]` | Existing projects resources may reference |
 | `required_version` | `str` | `">= 1.6.0"` | OpenTofu version constraint |
 | `google_provider_version` | `str` | `"~> 6.0"` | Google provider constraint |
+| `usage_estimates` | `dict[str, float]` | `{}` | Monthly usage per limit key for free-tier checks (see [limits](limits.md)) |
 
 Cross-resource references are validated: every `project` must be declared in
 `projects`, equal to `provider.project`, or listed in `external_projects`.
@@ -62,7 +66,8 @@ generated email.
 
 Bucket names are validated against GCS rules. `versioning=True` emits a nested
 `versioning { enabled = true }` block. `public_access_prevention` defaults to
-`"enforced"`.
+`"enforced"`. `estimated_size_gb` is used only by the free-tier check and is
+never rendered as HCL.
 
 ## `ProjectIamMember`
 
@@ -70,7 +75,10 @@ A standalone `google_project_iam_member` binding. `member` must include its
 principal prefix, e.g. `user:alice@example.com` or
 `serviceAccount:sa@project.iam.gserviceaccount.com`.
 
-## `BackendConfig`
+## `BackendConfig` (`GcpBackendConfig`)
+
+The GCP backend model is also exported as `GcpBackendConfig`; `BackendConfig`
+remains the compatibility alias.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|

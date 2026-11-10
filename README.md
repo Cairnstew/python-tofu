@@ -82,9 +82,48 @@ python-tofu plan --config infra.py --workdir .tofu
 | `apply` | Render, init and apply (or apply a saved plan) |
 | `destroy` | Render, init and destroy |
 | `output` | Read `tofu output -json` |
+| `limits` | Show provider limits and measured usage |
 
-Every command accepts `--config/-c`, `--workdir/-w`, `--binary` and
-`--verbose/-v`. See the [CLI reference](docs/reference/cli.md).
+Every command that loads a stack accepts `--config/-c`, `--workdir/-w`,
+`--binary` and `--verbose/-v`; `output` reads an existing workdir and takes only
+`--workdir`, `--binary` and `--verbose`. Run `python-tofu --version` to print the
+installed version. See the [CLI reference](docs/reference/cli.md).
+
+## Free-tier guardrails
+
+Every command that loads a stack checks the provider's limit policy before
+rendering or running `tofu`:
+
+```bash
+python-tofu render --config infra.py            # blocks on a violation (default)
+python-tofu plan   --config infra.py --limits warn
+python-tofu apply  --config infra.py --limits off
+python-tofu limits --config infra.py            # usage report
+python-tofu limits --config infra.py --usage live   # include existing infra
+```
+
+The GCP policy encodes the Google Cloud always-free tier (per billing account).
+`measure_usage` covers declared stack resources plus explicit
+`GcpStack.usage_estimates`; `--usage live` adds read-only Cloud Asset Inventory
+so manually created and pre-existing resources count too. Unmeasured limits are
+reported as `unknown` (never as zero); `--fail-on-unknown` makes them fatal.
+Per-area limits and a normalised `gcp.free_tier.total` aggregate are supported.
+See the [limits reference](docs/reference/limits.md).
+
+## Providers
+
+The package is split into a provider-agnostic engine and per-provider branches:
+
+| Layer | Contents |
+|-------|----------|
+| `python_tofu.core` | HCL writer, loader, runner, `BaseStack`, `BaseRenderer`, `Provider` contract, CLI factory |
+| `python_tofu.providers.gcp` | GCP models, `GcpStack`, identifier quirks, `GcpRenderer`, registered `GCP` plugin |
+
+GCP is the default: the top-level names (`GcpStack`, `BackendConfig`,
+`Renderer`, `load_stack`) are aliases for the GCP branch. To add a provider,
+subclass `BaseStack` and `BaseRenderer`, register a `Provider`, and bind a CLI
+with `core.cli.app.build_app(PROVIDER, version=...)`. See
+[STRUCTURE.md](STRUCTURE.md#adding-a-provider).
 
 ## Development
 
@@ -98,6 +137,7 @@ just nix-build  # build the application
 
 - [Quickstart](docs/guides/quickstart.md)
 - [CLI reference](docs/reference/cli.md)
+- [Limits reference](docs/reference/limits.md)
 - [DSL reference](docs/reference/dsl.md)
 - [Module reference](docs/reference/module.md)
 - [CI reference](docs/reference/ci.md)

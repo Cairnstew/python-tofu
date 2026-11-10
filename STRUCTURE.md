@@ -3,35 +3,63 @@
 ```
 .
 ├── src/python_tofu/
-│   ├── __init__.py               # Public DSL exports + __version__
+│   ├── __init__.py               # Public facade: core + GCP exports, __version__
 │   ├── __main__.py               # python -m python_tofu
 │   ├── py.typed                  # PEP 561 marker
-│   ├── exceptions.py             # TofuError hierarchy
-│   ├── hcl.py                    # Dependency-free HCL writer (Attr/Block/Raw)
-│   ├── loader.py                 # Import infra.py → validated GcpStack
-│   ├── models/
+│   │
+│   ├── core/                     # Provider-agnostic engine
 │   │   ├── __init__.py
-│   │   ├── gcp.py                # GcpProvider, GcpProject, ServiceAccount, ...
-│   │   ├── stack.py              # GcpStack, BackendConfig
-│   │   └── results.py            # RenderResult, PlanSummary, CommandResult
-│   ├── services/
+│   │   ├── exceptions.py         # TofuError hierarchy
+│   │   ├── hcl.py                # Dependency-free HCL writer (Attr/Block/Raw)
+│   │   ├── limits.py             # Limit/LimitPolicy/Usage/Throttler + reports
+│   │   ├── models.py             # TofuModel, BackendConfig, BaseStack
+│   │   ├── results.py            # RenderResult, PlanSummary, CommandResult
+│   │   ├── loader.py             # load_stack(path, stack_type)
+│   │   ├── provider.py           # Provider contract + registry
+│   │   ├── renderer.py           # BaseRenderer: file contract + terraform block
+│   │   ├── runner.py             # TofuRunner subprocess wrapper
+│   │   └── cli/
+│   │       ├── app.py            # build_app(provider) → Typer app
+│   │       ├── base.py           # BaseCommand: load, prepare, execute, report
+│   │       ├── context.py        # AppContext bound to a provider
+│   │       ├── options.py        # Shared option types, path resolution
+│   │       └── commands/         # create_app(provider) factories
+│   │           ├── render.py
+│   │           ├── init.py
+│   │           ├── validate.py
+│   │           ├── plan.py
+│   │           ├── apply.py
+│   │           ├── destroy.py
+│   │           ├── output.py
+│   │           └── limits.py
+│   │
+│   ├── providers/
+│   │   ├── __init__.py           # Registry re-exports
+│   │   └── gcp/                  # Google Cloud Platform branch
+│   │       ├── __init__.py       # Exports; importing registers GCP
+│   │       ├── models.py         # GcpProvider, GcpProject, ..., GcpBackendConfig
+│   │       ├── stack.py          # GcpStack(BaseStack) + cross-reference checks
+│   │       ├── quirks.py         # GCP regexes, role rules, slug, uniqueness
+│   │       ├── limits.py         # GCP_FREE_TIER policy + usage measurement
+│   │       ├── live.py           # Cloud Asset Inventory live measurement
+│   │       ├── renderer.py       # GcpRenderer(BaseRenderer[GcpStack])
+│   │       └── provider.py       # GCP Provider instance
+│   │
+│   ├── exceptions.py             # Shim → core.exceptions
+│   ├── hcl.py                    # Shim → core.hcl
+│   ├── loader.py                 # Default-GCP loader shim
+│   ├── models/                   # Historical import path (re-exports)
 │   │   ├── __init__.py
-│   │   ├── renderer.py           # GcpStack → versions.tf/providers.tf/main.tf
-│   │   └── runner.py             # tofu subprocess wrapper + show -json parsing
+│   │   ├── gcp.py                # Shim → providers.gcp.models
+│   │   ├── results.py            # Shim → core.results
+│   │   └── stack.py              # Shim → providers.gcp.stack
+│   ├── services/                 # Historical import path (re-exports)
+│   │   ├── __init__.py
+│   │   ├── renderer.py           # Renderer = GcpRenderer
+│   │   └── runner.py             # Shim → core.runner
 │   └── cli/
 │       ├── __init__.py
-│       ├── main.py               # Typer app and command registration
-│       ├── context.py            # AppContext (config/workdir/binary/verbose)
-│       ├── options.py            # Shared Annotated option types
-│       └── commands/
-│           ├── base.py           # BaseCommand: load, prepare, execute, report
-│           ├── render.py
-│           ├── init.py
-│           ├── validate.py
-│           ├── plan.py
-│           ├── apply.py
-│           ├── destroy.py
-│           └── output.py
+│       └── main.py               # app = build_app(GCP, version=...)
 │
 ├── examples/gcp_bootstrap/
 │   ├── infra.py                  # End-to-end example stack
@@ -42,6 +70,7 @@
 │   ├── unit/
 │   │   ├── test_hcl.py
 │   │   ├── test_models.py
+│   │   ├── test_provider_plugin.py  # core registry + non-GCP provider
 │   │   ├── test_renderer.py
 │   │   ├── test_runner.py
 │   │   ├── test_loader.py
@@ -63,6 +92,7 @@
 │   └── reference/
 │       ├── cli.md
 │       ├── dsl.md
+│       ├── limits.md
 │       ├── module.md
 │       └── ci.md
 │
@@ -86,26 +116,51 @@
 └── CHANGELOG.md
 ```
 
+## Layers
+
+The package has a strict dependency direction:
+
+```
+python_tofu.cli.main ──► providers.gcp ──► core
+        │                                   ▲
+        └──────────────► core.cli ──────────┘
+```
+
+- **`core`** may not import anything from `providers`. It defines the plugin
+  contract (`Provider`), the generic stack envelope (`BaseStack`), the file
+  contract (`BaseRenderer`) and the CLI factory.
+- **`providers.gcp`** imports core and supplies the GCP models, validation
+  quirks, HCL shapes and the registered `GCP` plugin.
+- **Top-level modules** (`models/`, `services/`, `hcl.py`, `loader.py`, …) are
+  thin re-exports kept for backwards compatibility.
+
 ## Execution flow
 
 ```
 infra.py
    │  importlib
    ▼
-load_stack() ──► GcpStack (Pydantic validation)
+core.loader.load_stack(path, GCP.stack_type) ──► GcpStack (Pydantic)
    │
    ▼
-Renderer.render()
-   ├── resource_blocks()  ── local names + duplicate checks
-   ├── _terraform_block() ── required_version, provider constraint, backend
-   ├── _provider_block()
-   └── hcl.render()
+core.limits.Throttler(GCP.limit_policy).check(usage)
+   │  usage = GCP.measure_usage(stack)            # --usage stack (default)
+   │        + GCP.live_measure_usage(stack)       # --usage live (CAI, read-only)
+   │  error (default) → abort; warn → print; off → skip; unknown → ?/fail
+   ▼
+GCP.renderer_type = GcpRenderer(workdir)
+   │
+   ├── BaseRenderer.render_text()  ── file contract, terraform block
+   ├── GcpRenderer.required_providers() ── hashicorp/google constraint
+   ├── GcpRenderer.backend_block()      ── gcs/local backend
+   ├── GcpRenderer.provider_blocks()    ── provider "google" { ... }
+   └── GcpRenderer.resource_blocks()    ── google_* resources
    │
    ▼
-<workdir>/versions.tf, providers.tf, main.tf, .gitignore
+core.hcl.render() → <workdir>/versions.tf, providers.tf, main.tf, .gitignore
    │
    ▼
-TofuRunner ──► subprocess: tofu init / plan / apply / destroy / output
+core.runner.TofuRunner ──► tofu init / plan / apply / destroy / output
    │
    ▼
 CommandResult ──► CLI output + exit code
@@ -114,26 +169,47 @@ CommandResult ──► CLI output + exit code
 ## Type flow
 
 ```
-GcpStack
- ├── GcpProvider
- ├── GcpProject      → google_project
- ├── ProjectApi      → google_project_service
- ├── ServiceAccount  → google_service_account + google_project_iam_member (roles)
- ├── StorageBucket   → google_storage_bucket
- ├── ProjectIamMember→ google_project_iam_member
- └── BackendConfig   → terraform { backend "..." { ... } }
+BaseStack (core)                    ← required_version, backend
+ └── GcpStack (providers.gcp)       ← provider + GCP resources
+      ├── GcpProvider
+      ├── GcpProject      → google_project
+      ├── ProjectApi      → google_project_service
+      ├── ServiceAccount  → google_service_account + role bindings
+      ├── StorageBucket   → google_storage_bucket
+      ├── ProjectIamMember→ google_project_iam_member
+      ├── GcpBackendConfig→ terraform { backend "..." { ... } }
+      └── usage_estimates  → LimitPolicy usage (free-tier checks)
 ```
+
+## Adding a provider
+
+1. Create `src/python_tofu/providers/<name>/` with `models.py`, `stack.py`
+   (subclass `BaseStack`), `renderer.py` (subclass `BaseRenderer[YourStack]`)
+   and `provider.py` (`register_provider(Provider(...))`).
+2. Optionally supply a `LimitPolicy` and `measure_usage` so
+   `--limits`/`python-tofu limits` work for the provider.
+3. Export the plugin from the provider's `__init__.py`.
+4. Bind a CLI with `core.cli.app.build_app(YOUR_PROVIDER, version=...)` — no
+   core command code needs to change.
+
+Provider quirks (identifier rules, resource naming, provider-specific blocks)
+belong in the provider package, not in core.
 
 ## Design decisions
 
 - **Python is the authoring layer, OpenTofu is the engine.** No reimplementation
   of planning/state; the wrapper renders HCL and shells out.
-- **Validation belongs in models.** Invalid GCP IDs and unknown project
+- **Core is provider-blind.** GCP-specific rules live in `providers/gcp`; the
+  core only knows the `Provider` contract.
+- **Validation belongs in provider models.** Invalid GCP IDs and unknown project
   references fail before any `tofu` process starts.
+- **Limits are a core contract.** Providers declare a `LimitPolicy` and a
+  `measure_usage` function; core enforces `error`/`warn`/`off` uniformly and
+  supports both per-area limits and an aggregate (summarised) ceiling.
 - **The HCL writer is in-tree.** It is small, deterministic, testable and keeps
   the dependency surface at Typer + Pydantic + Rich.
 - **Commands are sub-apps with per-command options.** This lets
   `python-tofu plan --config ...` work without Click's group-option ordering
-  restriction.
+  restriction, and each command is built by a `create_app(provider)` factory.
 - **The example is the integration test.** `examples/gcp_bootstrap/infra.py` is
   loaded by unit, integration and flake checks.

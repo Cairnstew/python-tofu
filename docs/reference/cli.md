@@ -4,11 +4,13 @@
 
 ```bash
 python-tofu COMMAND [OPTIONS]
+python-tofu --version
 ```
 
 ## Shared options
 
-Every command accepts:
+Every command that loads a stack (`render`, `init`, `validate`, `plan`, `apply`,
+`destroy`) accepts:
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -16,6 +18,17 @@ Every command accepts:
 | `--workdir`, `-w` | `.tofu` | Directory where HCL and state are written |
 | `--binary` | `tofu` | OpenTofu binary to invoke |
 | `--verbose`, `-v` | false | Print every `tofu` command before running it |
+| `--limits` | policy default (`error` for GCP) | Enforce limits: `error`, `warn` or `off` |
+| `--usage` | `stack` | `stack` uses declared resources; `live` also reads existing infrastructure |
+| `--fail-on-unknown` | false | Fail when a limit could not be measured (ignored with `--limits off`) |
+
+`output` reads an existing workdir and accepts only `--workdir`, `--binary`,
+`--verbose` and `--json/--no-json` (there is no `--config`, because it does not
+render).
+
+`--workdir` is resolved against the current directory. `--plan-file` and
+`--var-file` are also resolved against the current directory before `tofu` runs
+from inside the workdir, so relative paths mean what the shell says.
 
 ## Commands
 
@@ -80,6 +93,33 @@ Render, run `tofu init`, then `tofu destroy`.
 
 Run `tofu output -json` (or `--no-json` for plain output). Requires an existing
 working directory.
+
+| Option | Description |
+|--------|-------------|
+| `--json` / `--no-json` | Emit machine-readable JSON (default) or plain output |
+
+### `limits`
+
+Load the stack and print the provider's limit policy with measured usage. No
+`tofu` process runs.
+
+| Option | Description |
+|--------|-------------|
+| `--usage` | `stack` (default) or `live` (measure existing infrastructure) |
+| `--fail-on-unknown` | Exit 1 if any limit could not be measured |
+| `--all` | Include unused and unknown limits |
+| `--json` | Emit the full report as JSON |
+
+```bash
+python-tofu limits --config infra.py --all
+# GCP limits: 54 limits checked; 1 exceeded, 1 warning, 50 unknown
+# ! gcp.storage.standard_gb: 9/5 GB (180.0%)
+# ? gcp.bigquery.query_tib: unknown/1 TiB
+```
+
+`unknown` means "not measured", not zero — see the
+[limits reference](limits.md#unknown-is-not-zero). `--usage live` uses Cloud
+Asset Inventory to include manually created and pre-existing resources.
 
 ## Exit codes
 

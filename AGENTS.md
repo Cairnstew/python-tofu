@@ -2,9 +2,13 @@
 
 ## About this project
 
-`python-tofu` is a typed Python DSL and CLI wrapper for managing GCP
-infrastructure with OpenTofu. A Python module builds a validated `GcpStack`;
+`python-tofu` is a typed Python DSL and CLI wrapper for managing infrastructure
+with OpenTofu. A Python module builds a validated provider stack (GCP today);
 the renderer writes deterministic HCL; the CLI drives `tofu`.
+
+The package is split into a provider-agnostic `core/` and provider branches
+under `providers/`. GCP-specific models, validation quirks and HCL shapes live
+in `providers/gcp/`; core must never import from `providers`.
 
 It is a Python project managed with **uv2nix** — uv's `uv.lock` drives Nix
 derivations via pure Nix code and the repo builds with `nix build .#default`.
@@ -32,12 +36,15 @@ derivations via pure Nix code and the repo builds with `nix build .#default`.
 | `pyproject.toml` | Python metadata, dependencies, CLI entry point |
 | `uv.lock` | uv lock file — drives the uv2nix overlay |
 | `src/python_tofu/` | Application package |
-| `src/python_tofu/models/` | Pydantic DSL for GCP resources and `GcpStack` |
-| `src/python_tofu/hcl.py` | Dependency-free HCL writer |
-| `src/python_tofu/services/renderer.py` | Stack → files in a workdir |
-| `src/python_tofu/services/runner.py` | `tofu` subprocess wrapper |
-| `src/python_tofu/loader.py` | Import a Python `infra.py` and return its `stack` |
-| `src/python_tofu/cli/` | Typer commands and shared options |
+| `src/python_tofu/core/` | Provider-agnostic engine: HCL, loader, runner, renderer base, CLI factory |
+| `src/python_tofu/core/provider.py` | `Provider` plugin contract and registry |
+| `src/python_tofu/core/limits.py` | `Limit`/`LimitPolicy`/`Usage`/`Throttler`, reports |
+| `src/python_tofu/providers/gcp/` | GCP branch: models, `GcpStack`, quirks, renderer, limits, live inventory, plugin |
+| `src/python_tofu/providers/gcp/renderer.py` | GCP stack → files in a workdir |
+| `src/python_tofu/providers/gcp/limits.py` | GCP free-tier policy + usage measurement |
+| `src/python_tofu/providers/gcp/live.py` | Cloud Asset Inventory live measurement |
+| `src/python_tofu/models/`, `services/`, `hcl.py`, `loader.py` | Backwards-compatible re-export shims |
+| `src/python_tofu/cli/main.py` | Default GCP Typer app (`build_app(GCP, ...)`) |
 | `examples/gcp_bootstrap/` | End-to-end project/service-account/bucket example |
 | `tests/` | Unit, integration and Nix-eval suites |
 | `.github/workflows/` | CI/CD workflows |
@@ -82,20 +89,40 @@ pytest -q         # all tests (unit, integration, nix eval)
    `python = pkgs.python312` in `flake.nix`. Keep them in sync.
 6. **Adding Nix-specific overrides** — add an extension in
    `composeManyExtensions` in `flake.nix`. See `UV2NIX.md`.
-7. **Adding a GCP resource** — add a frozen Pydantic model in `models/gcp.py`,
-   a renderer function in `services/renderer.py`, and tests. Update the DSL
-   reference.
-8. **HCL output must stay deterministic and `tofu fmt` clean** — use the
+7. **Adding a GCP resource** — add a frozen Pydantic model in
+   `providers/gcp/models.py`, a renderer function in
+   `providers/gcp/renderer.py`, and tests. Update the DSL reference.
+8. **Keep core provider-blind** — provider-specific rules (identifiers, backend
+   kinds, resource naming) belong in `providers/<name>/`; core only knows the
+   `Provider` contract.
+9. **HCL output must stay deterministic and `tofu fmt` clean** — use the
    in-tree writer, never string-concatenate raw HCL.
-9. **Validate before `tofu` runs** — identifier and cross-reference checks belong
-   in Pydantic models, not in CLI commands.
-10. **Never commit credentials or state** — `.tofu/`, `*.tfstate` and
+10. **Validate before `tofu` runs** — identifier and cross-reference checks belong
+    in provider Pydantic models, not in CLI commands.
+11. **Limits are provider data, enforcement is core** — add `LimitPolicy`
+    entries in the provider's `limits.py`; never add provider-specific
+    enforcement paths to commands. Update `measure_usage` when a new resource
+    type becomes measurable, and `live_measure_usage` when existing
+    infrastructure can be counted. Never let an unmeasured limit report zero:
+    return a `Usage` without that key so it is `unknown`.
+12. **Never commit credentials or state** — `.tofu/`, `*.tfstate` and
     `plan.tfplan` are ignored.
 
 ## Architecture notes
 
-- `GcpStack` is frozen (`extra="forbid"`); tests rely on this.
-- The renderer owns local resource names and rejects duplicates with `RenderError`.
+- `BaseStack` is frozen (`extra="forbid"`); `GcpStack` subclasses it and tests
+  rely on immutability.
+- `BaseRenderer` owns the managed-file contract; `GcpRenderer` overrides the
+  provider hooks (`required_providers`, `backend_block`, `provider_blocks`,
+  `resource_blocks`).
+- The GCP renderer owns local resource names and rejects duplicates with
+  `RenderError`.
+- `BaseCommand.prepare()` checks `provider.limit_policy` via
+  `core.limits.Throttler` before rendering; `--limits error|warn|off` controls
+  it and `python-tofu limits` reports measured usage.
 - `TofuRunner` returns `CommandResult`; the CLI decides the exit code.
-- `loader.load_stack` executes the config module, then validates `stack`.
+- `core.loader.load_stack(path, stack_type)` executes the config module, then
+  validates `stack`; `python_tofu.loader.load_stack(path)` is the GCP default.
 - The CLI uses per-command options so `python-tofu plan --config ...` works.
+  Commands are built by `create_app(provider)` factories; bind another provider
+  with `core.cli.app.build_app(...)`.
