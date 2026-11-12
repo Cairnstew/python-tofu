@@ -356,14 +356,14 @@ plan output.
 
 ### agenix GCP credentials
 `/run/agenix/gcloud-auth` is the agenix-managed service-account JSON (owner
-`seanc:0400`, project `nixos-infra-496517`). `.envrc` exports
+`seanc:0400`, project `demo-project`). `.envrc` exports
 `GOOGLE_APPLICATION_CREDENTIALS`, `TF_VAR_gcp_credentials_file`,
 `GOOGLE_PROJECT`, `GOOGLE_CLOUD_PROJECT`, `CLOUDSDK_CORE_PROJECT` and
 `TF_VAR_project` when the file is readable. Run `direnv allow` after editing
 `.envrc`; without the secret the shell still evaluates.
 
 Verify the current billing/API state before creating projects or buckets: the
-`nixos-infra-496517` billing account has previously been closed, which makes
+`demo-project` billing account has previously been closed, which makes
 reads work but project/bucket creation fail with `403`.
 
 ### GCP project creation permissions

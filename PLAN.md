@@ -142,7 +142,7 @@ failures:
 ```
 python-tofu doctor --config infra.py [--usage live]
 ✓ credentials      project-main-owner@… (expires in 52m)
-✓ project          nixos-infra-496517 (ACTIVE)
+✓ project          demo-project (ACTIVE)
 ✓ billing          enabled
 ✓ APIs             6 required, all ENABLED
 ✗ state lock       another apply may be running (gs://…/default.tflock)

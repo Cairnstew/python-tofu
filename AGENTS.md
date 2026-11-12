@@ -13,6 +13,20 @@ in `providers/gcp/`; core must never import from `providers`.
 It is a Python project managed with **uv2nix** — uv's `uv.lock` drives Nix
 derivations via pure Nix code and the repo builds with `nix build .#default`.
 
+## Repository and CI
+
+| Fact | Value |
+|------|-------|
+| Remote | `origin` → `github.com/Cairnstew/python-tofu` (public) |
+| Default branch | `main` |
+| CI entry point | `.github/workflows/ci.yml` — the only `push`/`pull_request` workflow |
+| Local equivalent | `just check` (lint + typecheck + unit tests + `nix flake check --no-build`) |
+
+Every other workflow is `workflow_call` only and is invoked by `ci.yml`. CI
+triggers on pushes to `main` and on pull requests, so work on a branch needs a
+pull request to be tested. No repository secrets are used; workflows rely on
+`GITHUB_TOKEN` and OIDC. See `docs/reference/ci.md` for the job table.
+
 ## Reference files
 
 | File | Role |

@@ -1,5 +1,7 @@
 # python-tofu
 
+[![CI](https://github.com/Cairnstew/python-tofu/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Cairnstew/python-tofu/actions/workflows/ci.yml)
+
 A typed Python DSL and CLI wrapper for managing GCP infrastructure with
 [OpenTofu](https://opentofu.org/).
 
@@ -250,6 +252,23 @@ GCP is the default: the top-level names (`GcpStack`, `BackendConfig`,
 subclass `BaseStack` and `BaseRenderer`, register a `Provider`, and bind a CLI
 with `core.cli.app.build_app(PROVIDER, version=...)`. See
 [STRUCTURE.md](STRUCTURE.md#adding-a-provider).
+
+## Repository
+
+Source: [github.com/Cairnstew/python-tofu](https://github.com/Cairnstew/python-tofu)
+— public, default branch `main`.
+
+- Pushes to `main` and every pull request run `ci.yml`, which fans out to the
+  reusable `lint`, `typecheck`, `test-unit`, `test-integration`, `nix` and
+  `audit` workflows through `dorny/paths-filter@v3`.
+- Tags matching `v*` run `release.yml`: Nix build, PyPI publish via OIDC
+  trusted publishing, and a GitHub release.
+- `update-flake-lock.yml` runs weekly and opens an `automated` PR.
+- No repository secrets are required — every workflow uses `GITHUB_TOKEN` or
+  OIDC. The PyPI publish step needs a trusted publisher configured for this
+  repository before the first `v*` tag.
+
+See the [CI reference](docs/reference/ci.md) for the per-workflow job table.
 
 ## Development
 
