@@ -73,6 +73,30 @@ def test_empty_block_renders_inline() -> None:
     assert render(Block("terraform")) == "terraform {}\n"
 
 
+def test_nested_block_ends_the_alignment_run() -> None:
+    """`tofu fmt` aligns only consecutive attributes, so a block resets the run.
+
+    Regression: one width for the whole body over-padded the attributes after a
+    nested block, and `tofu fmt -check` rejected the rendered file.
+    """
+
+    rendered = render(
+        Block(
+            "resource",
+            ("google_storage_bucket", "artifacts"),
+            body=(
+                Attr("name", "b"),
+                Attr("location", "US"),
+                Block("versioning", body=(Attr("enabled", True),)),
+                Attr("depends_on", Raw("[google_project_service.api]")),
+            ),
+        )
+    )
+
+    assert '  name     = "b"\n  location = "US"\n' in rendered
+    assert "\n  depends_on = [google_project_service.api]\n" in rendered
+
+
 def test_nested_blocks_and_multiple_top_levels() -> None:
     rendered = render(
         Block(

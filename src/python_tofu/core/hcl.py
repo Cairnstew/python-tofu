@@ -118,16 +118,31 @@ def _render_block(block: Block, indent: int) -> str:
         return f"{pad}{header} {{}}"
 
     lines = [f"{pad}{header} {{"]
-    attribute_width = max(
-        (len(item.name) for item in block.body if isinstance(item, Attr)),
-        default=0,
-    )
-    for item in block.body:
+    # ``tofu fmt`` aligns only *consecutive* attribute lines: a nested block
+    # ends the run, so the attributes after it start a new column group. Using
+    # one width for the whole body produced over-padded output that `tofu fmt
+    # -check` rejected (e.g. ``depends_on`` after a ``versioning`` block).
+    index = 0
+    while index < len(block.body):
+        item = block.body[index]
         if isinstance(item, Block):
             lines.append(_render_block(item, indent + 1))
-        else:
-            name = item.name.ljust(attribute_width)
-            lines.append(f"{pad}  {name} = {render_value(item.value)}")
+            index += 1
+            continue
+
+        run: list[Attr] = []
+        while index < len(block.body):
+            candidate = block.body[index]
+            if not isinstance(candidate, Attr):
+                break
+            run.append(candidate)
+            index += 1
+
+        attribute_width = max(len(attr.name) for attr in run)
+        lines.extend(
+            f"{pad}  {attr.name.ljust(attribute_width)} = {render_value(attr.value)}"
+            for attr in run
+        )
     lines.append(f"{pad}}}")
     return "\n".join(lines)
 
