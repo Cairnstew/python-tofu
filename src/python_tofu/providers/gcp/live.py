@@ -68,7 +68,8 @@ def _access_token(stack: GcpStack) -> str:
     )
     try:
         if credentials_path:
-            credentials = service_account.Credentials.from_service_account_file(
+            loader = service_account.Credentials.from_service_account_file
+            credentials = loader(  # type: ignore[no-untyped-call]
                 credentials_path, scopes=scopes
             )
         else:

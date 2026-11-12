@@ -176,6 +176,18 @@
             tofu fmt -check -recursive "$out"
           '';
 
+          render-clean-example = pkgs.runCommand "render-clean-example"
+            {
+              nativeBuildInputs = [ self.packages.${system}.default pkgs.opentofu ];
+            } ''
+            python-tofu render \
+              --config ${./examples/gcp_clean}/stack.py \
+              --workdir "$out" > /dev/null
+            grep -q 'google_storage_bucket' "$out/main.tf"
+            grep -q 'google_project_iam_member' "$out/main.tf"
+            tofu fmt -check -recursive "$out"
+          '';
+
           module-eval =
             let
               stub = { lib, ... }: {

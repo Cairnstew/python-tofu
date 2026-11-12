@@ -82,6 +82,27 @@ stack = GcpStack(
 
 Run `python-tofu render --config infra.py`.
 
+### Split a stack across files
+
+The config directory is importable while the module loads, so a stack can be
+organised one module per resource family:
+
+```
+infra/
+├── stack.py           # exposes `stack`; only wires the parts together
+└── parts/
+    ├── __init__.py
+    ├── foundation.py  # provider, project, APIs
+    ├── storage.py     # buckets
+    └── iam.py         # service accounts and bindings
+```
+
+`stack.py` imports each part and passes the lists to one `GcpStack`. Sibling
+imports (`from parts.storage import buckets`) and relative imports
+(`from .parts.storage import buckets`) both work. See
+[`examples/gcp_clean/stack.py`](../../examples/gcp_clean/stack.py) for a complete
+version.
+
 ## 6. Run the checks
 
 ```bash

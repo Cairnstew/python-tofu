@@ -85,6 +85,26 @@ map "not in inventory" to `0` — that is the silent-pass bug `unknown` prevents
 the same billing account are invisible, so live numbers are a lower bound. Free
 tier is per billing account (Firestore and Logging excepted).
 
+### Bucket objects and binary/URL limits
+`BucketObject.content` is `str` or `bytes`. Text becomes a `content = "..."`
+attribute; bytes are written to `<workdir>/.objects/<sha>.bin` and referenced by
+`source`, because HCL string literals cannot carry arbitrary bytes. `source_url`
+uses `data "http"`, whose `response_body` is text — download binary URLs first.
+Relative `source` paths resolve against the process working directory at render
+time, not the config file's directory.
+
+### Object idempotency comes from Terraform state
+Applying an unchanged `BucketObject` is a no-op because OpenTofu compares
+`content`/the file hash with state. It is not content-addressed by the wrapper;
+deleting the workdir or state will cause a re-upload.
+
+### Objects must depend on the bucket they target
+A declared bucket is rendered as `bucket = google_storage_bucket.bucket_<name>.name`
+so the object waits for creation. Emitting a literal bucket name lets OpenTofu
+start the object in parallel, which was observed live as
+`404: The specified bucket does not exist`. Literal names are only correct for
+`external_buckets`.
+
 
 ### Aggregates are normalised, not summed units
 An `AggregateLimit` adds `used / amount` ratios, not raw GB or requests. Two

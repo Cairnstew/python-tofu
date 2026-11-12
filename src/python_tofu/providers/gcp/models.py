@@ -19,6 +19,16 @@ from python_tofu.providers.gcp.quirks import (
     validate_role,
 )
 
+StorageClass = Literal[
+    "STANDARD",
+    "NEARLINE",
+    "COLDLINE",
+    "ARCHIVE",
+    "MULTI_REGIONAL",
+    "REGIONAL",
+    "DURABLE_REDUCED_AVAILABILITY",
+]
+
 
 class GcpProvider(TofuModel):
     """The ``provider "google"`` block plus provider-level defaults."""
@@ -104,15 +114,7 @@ class StorageBucket(TofuModel):
     project: str
     name: str
     location: str = "US"
-    storage_class: Literal[
-        "STANDARD",
-        "NEARLINE",
-        "COLDLINE",
-        "ARCHIVE",
-        "MULTI_REGIONAL",
-        "REGIONAL",
-        "DURABLE_REDUCED_AVAILABILITY",
-    ] = "STANDARD"
+    storage_class: StorageClass = "STANDARD"
     uniform_bucket_level_access: bool = True
     public_access_prevention: Literal["inherited", "enforced"] = "enforced"
     force_destroy: bool = False
@@ -133,6 +135,68 @@ class StorageBucket(TofuModel):
                 f"contain only lowercase letters/digits/dots/hyphens/underscores: {value!r}"
             )
         return value
+
+
+class BucketObject(TofuModel):
+    """A ``google_storage_bucket_object``.
+
+    Exactly one content source is required:
+
+    - ``content`` — inline text or raw bytes (bytes are written to the workdir
+      and referenced with ``source``, because HCL cannot carry arbitrary bytes);
+    - ``source`` — a local file path;
+    - ``source_url`` — an HTTP(S) URL fetched by the ``hashicorp/http`` provider
+      at plan/apply time.
+
+    Terraform compares the declared content (or file hash) with state, so an
+    unchanged object is not re-uploaded. Combine with ``StorageBucket.versioning``
+    when previous generations must be retained.
+    """
+
+    bucket: str
+    name: str
+    content: str | bytes | None = None
+    source: str | None = None
+    source_url: str | None = None
+    content_type: str | None = Field(
+        default=None,
+        description="Defaults to a guess from `name` (e.g. .json → application/json)",
+    )
+    content_encoding: str | None = None
+    content_language: str | None = None
+    cache_control: str | None = None
+    metadata: dict[str, str] = Field(default_factory=dict)
+    storage_class: StorageClass | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _valid_object_name(cls, value: str) -> str:
+        if not value or value.startswith("/") or "\n" in value:
+            raise ValueError(
+                "object names must be a non-empty key without a leading slash or newline: "
+                f"{value!r}"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _one_content_source(self) -> "BucketObject":
+        provided = [
+            name
+            for name, value in (
+                ("content", self.content),
+                ("source", self.source),
+                ("source_url", self.source_url),
+            )
+            if value is not None
+        ]
+        if len(provided) != 1:
+            raise ValueError(
+                "exactly one of content, source or source_url is required; "
+                f"got {provided or 'none'}"
+            )
+        if self.source_url and not self.source_url.startswith(("http://", "https://")):
+            raise ValueError(f"source_url must be an http(s) URL: {self.source_url!r}")
+        return self
 
 
 class ProjectIamMember(TofuModel):
@@ -176,6 +240,7 @@ BackendConfig = GcpBackendConfig
 
 __all__ = [
     "BackendConfig",
+    "BucketObject",
     "GcpBackendConfig",
     "GcpProject",
     "GcpProvider",
@@ -183,5 +248,6 @@ __all__ = [
     "ProjectIamMember",
     "ServiceAccount",
     "StorageBucket",
+    "StorageClass",
     "TofuModel",
 ]

@@ -2,6 +2,7 @@
 
 from python_tofu.providers.gcp.models import (
     BackendConfig,
+    BucketObject,
     GcpBackendConfig,
     GcpProject,
     GcpProvider,
@@ -9,6 +10,7 @@ from python_tofu.providers.gcp.models import (
     ProjectIamMember,
     ServiceAccount,
     StorageBucket,
+    StorageClass,
     TofuModel,
 )
 from python_tofu.providers.gcp.quirks import (
@@ -20,6 +22,7 @@ from python_tofu.providers.gcp.quirks import (
 __all__ = [
     "BUCKET_NAME_RE",
     "BackendConfig",
+    "BucketObject",
     "GcpBackendConfig",
     "GcpProject",
     "GcpProvider",
@@ -29,5 +32,6 @@ __all__ = [
     "SERVICE_ACCOUNT_ID_RE",
     "ServiceAccount",
     "StorageBucket",
+    "StorageClass",
     "TofuModel",
 ]

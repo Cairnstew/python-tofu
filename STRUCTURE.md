@@ -23,6 +23,7 @@
 │   │       ├── base.py           # BaseCommand: load, prepare, execute, report
 │   │       ├── context.py        # AppContext bound to a provider
 │   │       ├── options.py        # Shared option types, path resolution
+│   │       ├── registry.py       # Command registry + entry-point discovery
 │   │       └── commands/         # create_app(provider) factories
 │   │           ├── render.py
 │   │           ├── init.py
@@ -31,7 +32,8 @@
 │   │           ├── apply.py
 │   │           ├── destroy.py
 │   │           ├── output.py
-│   │           └── limits.py
+│   │           ├── limits.py
+│   │           └── plugins.py
 │   │
 │   ├── providers/
 │   │   ├── __init__.py           # Registry re-exports
@@ -61,9 +63,13 @@
 │       ├── __init__.py
 │       └── main.py               # app = build_app(GCP, version=...)
 │
-├── examples/gcp_bootstrap/
-│   ├── infra.py                  # End-to-end example stack
-│   └── README.md
+├── examples/
+│   ├── gcp_bootstrap/
+│   │   ├── infra.py              # Single-file end-to-end example
+│   │   └── README.md
+│   └── gcp_clean/
+│       ├── stack.py              # Wires the parts together
+│       └── parts/                # foundation / storage / iam
 │
 ├── tests/
 │   ├── conftest.py               # src on sys.path, sample stack, fake tofu
@@ -74,7 +80,8 @@
 │   │   ├── test_renderer.py
 │   │   ├── test_runner.py
 │   │   ├── test_loader.py
-│   │   └── test_cli.py
+│   │   ├── test_cli.py
+│   │   └── test_cli_registry.py  # Registry, custom commands, plugin discovery
 │   ├── integration/
 │   │   └── test_cli_invocation.py
 │   └── nix_eval/
@@ -94,6 +101,7 @@
 │       ├── dsl.md
 │       ├── limits.md
 │       ├── module.md
+│       ├── plugins.md
 │       └── ci.md
 │
 ├── flake.nix                     # Flake outputs, devShells, checks
@@ -176,6 +184,7 @@ BaseStack (core)                    ← required_version, backend
       ├── ProjectApi      → google_project_service
       ├── ServiceAccount  → google_service_account + role bindings
       ├── StorageBucket   → google_storage_bucket
+      ├── BucketObject    → google_storage_bucket_object (+ data "http" for URLs)
       ├── ProjectIamMember→ google_project_iam_member
       ├── GcpBackendConfig→ terraform { backend "..." { ... } }
       └── usage_estimates  → LimitPolicy usage (free-tier checks)

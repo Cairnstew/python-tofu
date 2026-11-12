@@ -71,6 +71,31 @@ Then:
 python-tofu plan --config infra.py --workdir .tofu
 ```
 
+### Bucket contents
+
+Objects are declared alongside the bucket and can carry any text, raw bytes, a
+local file, or an HTTP(S) URL:
+
+```python
+from python_tofu import BucketObject
+
+stack = GcpStack(
+    provider=GcpProvider(project="my-project"),
+    buckets=[StorageBucket(project="my-project", name="my-project-artifacts")],
+    bucket_objects=[
+        BucketObject(
+            bucket="my-project-artifacts",
+            name="config/release.json",
+            content='{"release": "v1"}',
+        ),
+    ],
+)
+```
+
+OpenTofu only re-uploads an object when its content or source file changes.
+`StorageBucket(versioning=True)` keeps previous generations. See the
+[DSL reference](docs/reference/dsl.md#bucketobject).
+
 ## CLI
 
 | Command | Description |
@@ -83,6 +108,7 @@ python-tofu plan --config infra.py --workdir .tofu
 | `destroy` | Render, init and destroy |
 | `output` | Read `tofu output -json` |
 | `limits` | Show provider limits and measured usage |
+| `plugins` | Show commands, providers and discovered plugins |
 
 Every command that loads a stack accepts `--config/-c`, `--workdir/-w`,
 `--binary` and `--verbose/-v`; `output` reads an existing workdir and takes only
@@ -137,6 +163,7 @@ just nix-build  # build the application
 
 - [Quickstart](docs/guides/quickstart.md)
 - [CLI reference](docs/reference/cli.md)
+- [Commands and plugins](docs/reference/plugins.md)
 - [Limits reference](docs/reference/limits.md)
 - [DSL reference](docs/reference/dsl.md)
 - [Module reference](docs/reference/module.md)

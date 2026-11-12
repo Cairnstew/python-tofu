@@ -48,6 +48,7 @@ from python_tofu.core.runner import TofuRunner
 from python_tofu.providers.gcp import (
     GCP,
     BackendConfig,
+    BucketObject,
     GcpBackendConfig,
     GcpProject,
     GcpProvider,
@@ -57,6 +58,7 @@ from python_tofu.providers.gcp import (
     ProjectIamMember,
     ServiceAccount,
     StorageBucket,
+    StorageClass,
 )
 
 __version__ = "0.1.0"
@@ -76,6 +78,7 @@ __all__ = [
     "BackendConfig",
     "BaseRenderer",
     "BaseStack",
+    "BucketObject",
     "CommandResult",
     "ConfigError",
     "GCP",
@@ -103,6 +106,7 @@ __all__ = [
     "Renderer",
     "ServiceAccount",
     "StorageBucket",
+    "StorageClass",
     "TofuCommandError",
     "Throttler",
     "TofuError",

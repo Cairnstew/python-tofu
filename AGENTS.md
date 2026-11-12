@@ -107,6 +107,11 @@ pytest -q         # all tests (unit, integration, nix eval)
     return a `Usage` without that key so it is `unknown`.
 12. **Never commit credentials or state** — `.tofu/`, `*.tfstate` and
     `plan.tfplan` are ignored.
+13. **Commands are registry data** — add in-tree commands through `_BUILTINS` in
+    `core/cli/commands/__init__.py` (or `register_command`); out-of-tree
+    extensions use the `python_tofu.commands` / `python_tofu.providers` entry
+    points. Keep `build_app(provider, ...)` provider-agnostic and let a failing
+    plugin warn rather than abort startup.
 
 ## Architecture notes
 

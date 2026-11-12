@@ -6,6 +6,7 @@ from pydantic import Field, field_validator, model_validator
 
 from python_tofu.core.models import BaseStack
 from python_tofu.providers.gcp.models import (
+    BucketObject,
     GcpBackendConfig,
     GcpProject,
     GcpProvider,
@@ -24,11 +25,16 @@ class GcpStack(BaseStack):
     apis: list[ProjectApi] = Field(default_factory=list)
     service_accounts: list[ServiceAccount] = Field(default_factory=list)
     buckets: list[StorageBucket] = Field(default_factory=list)
+    bucket_objects: list[BucketObject] = Field(default_factory=list)
     iam_members: list[ProjectIamMember] = Field(default_factory=list)
     backend: GcpBackendConfig | None = None
     external_projects: list[str] = Field(
         default_factory=list,
         description="Existing project IDs resources may reference without declaring a GcpProject",
+    )
+    external_buckets: list[str] = Field(
+        default_factory=list,
+        description="Existing bucket names objects may target without declaring a StorageBucket",
     )
     google_provider_version: str = "~> 6.0"
     usage_estimates: dict[str, float] = Field(
@@ -66,4 +72,20 @@ class GcpStack(BaseStack):
                 + ", ".join(missing)
                 + ". Declare them in `projects` or list them in `external_projects`."
             )
+
+        known_buckets = {bucket.name for bucket in self.buckets} | set(self.external_buckets)
+        missing_buckets = sorted({item.bucket for item in self.bucket_objects} - known_buckets)
+        if missing_buckets:
+            raise ValueError(
+                "bucket objects reference unknown buckets: "
+                + ", ".join(missing_buckets)
+                + ". Declare them in `buckets` or list them in `external_buckets`."
+            )
+
+        seen_objects: set[tuple[str, str]] = set()
+        for item in self.bucket_objects:
+            key = (item.bucket, item.name)
+            if key in seen_objects:
+                raise ValueError(f"duplicate bucket object {item.name!r} in {item.bucket!r}")
+            seen_objects.add(key)
         return self

@@ -8,6 +8,7 @@ from python_tofu.providers.gcp.limits import GCP_FREE_TIER, measure_usage
 from python_tofu.providers.gcp.live import LiveUsageError, live_measure_usage
 from python_tofu.providers.gcp.models import (
     BackendConfig,
+    BucketObject,
     GcpBackendConfig,
     GcpProject,
     GcpProvider,
@@ -15,6 +16,7 @@ from python_tofu.providers.gcp.models import (
     ProjectIamMember,
     ServiceAccount,
     StorageBucket,
+    StorageClass,
     TofuModel,
 )
 from python_tofu.providers.gcp.provider import GCP
@@ -23,6 +25,7 @@ from python_tofu.providers.gcp.stack import GcpStack
 
 __all__ = [
     "BackendConfig",
+    "BucketObject",
     "GCP",
     "GCP_FREE_TIER",
     "GcpBackendConfig",
@@ -35,6 +38,7 @@ __all__ = [
     "ProjectIamMember",
     "ServiceAccount",
     "StorageBucket",
+    "StorageClass",
     "TofuModel",
     "live_measure_usage",
     "measure_usage",

@@ -7,6 +7,7 @@ without fighting a generic validator.
 
 from __future__ import annotations
 
+import mimetypes
 import re
 
 from python_tofu.core.exceptions import RenderError
@@ -37,6 +38,13 @@ def slug(value: str) -> str:
     if result[0].isdigit():
         result = f"r_{result}"
     return result
+
+
+def guess_content_type(name: str, default: str = "application/octet-stream") -> str:
+    """Guess an object's content type from its key, falling back to bytes."""
+
+    guessed, _encoding = mimetypes.guess_type(name)
+    return guessed or default
 
 
 def require_unique(seen: dict[str, str], address: str, source: str) -> None:

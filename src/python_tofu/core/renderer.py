@@ -47,6 +47,11 @@ class BaseRenderer(ABC, Generic[StackT]):
     def provider_blocks(self, stack: StackT) -> list[Block]:
         """Return the provider configuration block(s)."""
 
+    def data_blocks(self, stack: StackT) -> list[Block]:
+        """Return top-level ``data`` blocks (default: none)."""
+
+        return []
+
     def required_providers(self, stack: StackT) -> dict[str, dict[str, str]]:
         """Map provider name → ``required_providers`` attributes."""
 
@@ -85,11 +90,17 @@ class BaseRenderer(ABC, Generic[StackT]):
     def render_text(self, stack: StackT) -> dict[str, str]:
         """Return the generated file contents without touching the filesystem."""
 
+        data = self.data_blocks(stack)
         blocks = self.resource_blocks(stack)
+        main = (
+            render(*data, *blocks)
+            if (data or blocks)
+            else "# No resources declared in the stack.\n"
+        )
         return {
             "versions.tf": render(self.terraform_block(stack)),
             "providers.tf": render(*self.provider_blocks(stack)),
-            "main.tf": (render(*blocks) if blocks else "# No resources declared in the stack.\n"),
+            "main.tf": main,
             ".gitignore": self.GITIGNORE,
         }
 

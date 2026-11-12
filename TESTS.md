@@ -14,11 +14,13 @@ tests/
 │   ├── test_limits.py     #   Core Limit/Usage/Throttler arithmetic and reports
 │   ├── test_gcp_limits.py #   Free-tier catalog, measurement, aggregates
 │   ├── test_gcp_live.py   #   Cloud Asset Inventory parsing and free-tier rules
+│   ├── test_gcp_objects.py #  BucketObject validation and HCL shapes
 │   ├── test_provider_plugin.py # Registry + core renderer with a non-GCP provider
 │   ├── test_renderer.py   #   Golden-style HCL assertions, duplicates, backends
 │   ├── test_runner.py     #   Command construction, JSON parsing, errors
 │   ├── test_loader.py     #   Config module import and error wrapping
-│   └── test_cli.py        #   Typer CliRunner + fake tofu binary
+│   ├── test_cli.py        #   Typer CliRunner + fake tofu binary
+│   └── test_cli_registry.py # Command registry, aliases, plugin discovery
 │
 ├── integration/           # CLI subprocess invocation
 │   └── test_cli_invocation.py
@@ -62,11 +64,14 @@ pytest tests/                 # everything
 | `core/limits.py` | `unit/` | Usage arithmetic, exceeded/warn/unknown actions, aggregates, enforcement |
 | `providers/gcp/limits.py` | `unit/` | Free-tier amounts, region filtering, estimate merging |
 | `providers/gcp/live.py` | `unit/` | CAI pagination, region/type rules, live-over-stack override |
+| `providers/gcp/models.py` (`BucketObject`) | `unit/` | Source exclusivity, key rules, bucket references |
+| `providers/gcp/renderer.py` (`BucketObject`) | `unit/` | Inline/source/URL blocks, bytes materialisation, http provider |
 | `core/renderer.py` | `unit/` | Managed-file contract via a minimal non-GCP renderer |
 | `providers/gcp/models.py` | `unit/` | Instantiate Pydantic models; assert validation errors |
 | `providers/gcp/renderer.py` | `unit/` | Render a sample stack and assert HCL fragments; duplicate errors |
 | `core/runner.py` | `unit/` | Monkeypatch `subprocess.run`; assert argv and parsing |
 | `core/loader.py` | `unit/` | Write temporary config modules; assert errors |
+| `core/cli/registry.py` | `unit/` | Registration conflicts, ordering, aliases, fake entry points |
 | `core/cli/` | `unit/` + `integration/` | `CliRunner` with fake tofu; subprocess `python -m python_tofu` |
 | `nix/module.nix` | `nix_eval/` | Evaluate `nixosModules.default` and option defaults |
 

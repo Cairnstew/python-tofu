@@ -18,12 +18,24 @@ StackT = TypeVar("StackT", bound=BaseStack)
 def _load_module(path: Path) -> ModuleType:
     digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:12]
     module_name = f"_python_tofu_config_{digest}"
-    spec = importlib.util.spec_from_file_location(module_name, path)
+    # ``submodule_search_locations`` makes relative imports (``from .parts ...``)
+    # resolve inside the config's own directory instead of failing because the
+    # synthetic module is not part of a package.
+    spec = importlib.util.spec_from_file_location(
+        module_name, path, submodule_search_locations=[str(path.parent)]
+    )
     if spec is None or spec.loader is None:
         raise ConfigError(f"cannot import {path}: not a Python source file")
 
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
+    # A console-script entry point puts its own ``bin`` directory first on
+    # ``sys.path``, so sibling modules next to the config are otherwise
+    # unimportable. Add the config directory for the duration of the import.
+    search_path = str(path.parent)
+    inserted = search_path not in sys.path
+    if inserted:
+        sys.path.insert(0, search_path)
     try:
         spec.loader.exec_module(module)
     except ConfigError:
@@ -32,6 +44,8 @@ def _load_module(path: Path) -> ModuleType:
         raise ConfigError(f"error while importing {path}: {exc}") from exc
     finally:
         sys.modules.pop(module_name, None)
+        if inserted and search_path in sys.path:
+            sys.path.remove(search_path)
     return module
 
 

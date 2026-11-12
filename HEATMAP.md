@@ -21,6 +21,7 @@
 | `src/python_tofu/providers/gcp/limits.py` | Free-tier amounts and measurement |
 | `src/python_tofu/providers/gcp/live.py` | Cloud Asset Inventory measurement and rules |
 | `src/python_tofu/core/limits.py` | Limit/throttle contract and reports |
+| `src/python_tofu/core/cli/registry.py` | Command registry, entry-point groups, plugin report |
 | `src/python_tofu/core/runner.py` | New tofu subcommands / flags |
 | `src/python_tofu/core/hcl.py` | New HCL constructs |
 | `pyproject.toml` | New deps, version bump |
