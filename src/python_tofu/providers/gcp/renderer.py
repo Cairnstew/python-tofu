@@ -12,6 +12,7 @@ import hashlib
 from decimal import Decimal
 from pathlib import Path
 
+from python_tofu.core.exceptions import RenderError
 from python_tofu.core.hcl import Attr, Block, Raw, attr, body
 from python_tofu.core.renderer import BaseRenderer
 from python_tofu.core.results import RenderResult
@@ -301,7 +302,8 @@ def _volume_source(volume: Volume) -> Block:
             "cloud_sql_instance",
             body=body(Attr("instances", volume.cloud_sql.instances)),
         )
-    assert volume.secret is not None
+    if volume.secret is None:  # the model guarantees exactly one variant
+        raise RenderError("volume declares no variant")
     return Block(
         "secret",
         body=body(
@@ -359,7 +361,8 @@ def _probe_block(probe: Probe, name: str) -> Block:
     elif probe.tcp_socket is not None:
         check = Block("tcp_socket", body=body(attr("port", probe.tcp_socket.port)))
     else:
-        assert probe.grpc is not None
+        if probe.grpc is None:  # the model guarantees exactly one variant
+            raise RenderError("probe declares no variant")
         check = Block(
             "grpc",
             body=body(
@@ -573,7 +576,8 @@ def _pubsub_subscription_block(subscription: PubSubSubscription, stack: "GcpStac
 
 
 def _dead_letter_iam_block(subscription: PubSubSubscription, stack: "GcpStack") -> Block:
-    assert subscription.dead_letter is not None
+    if subscription.dead_letter is None:  # only called for subscriptions that set one
+        raise RenderError("dead-letter helper called without a dead_letter")
     topic = subscription.dead_letter.topic.rsplit("/", 1)[-1]
     topic_value: str | Raw = (
         Raw(f"google_pubsub_topic.topic_{slug(topic)}.name")
@@ -617,7 +621,8 @@ def _service_account_name_ref(stack: "GcpStack", value: str) -> str | Raw:
 def _push_token_creator_block(subscription: PubSubSubscription, stack: "GcpStack") -> Block:
     """Let the Pub/Sub service agent mint OIDC tokens for the push identity."""
 
-    assert subscription.push_service_account is not None
+    if subscription.push_service_account is None:  # only called when one is set
+        raise RenderError("push helper called without a push_service_account")
     member = (
         '"serviceAccount:service-'
         f"${{data.google_project.project_{slug(subscription.project)}.number}}"

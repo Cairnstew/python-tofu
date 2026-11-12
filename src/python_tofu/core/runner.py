@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
+import subprocess  # nosec B404 - running the `tofu` binary is this tool's purpose
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -30,7 +30,8 @@ class TofuRunner:
 
         command = [self.binary, *args]
         try:
-            process = subprocess.run(
+            # argv list, no shell; the binary is the user's own `tofu`.
+            process = subprocess.run(  # nosec B603
                 command,
                 cwd=self.workdir,
                 env=self.env,

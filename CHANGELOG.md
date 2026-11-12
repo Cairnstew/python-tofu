@@ -136,6 +136,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The HCL writer aligned every attribute in a block to one column, so an
+  attribute that followed a nested block (for example `depends_on` after
+  `versioning`) was over-padded and `tofu fmt -check` rejected the rendered
+  file. Alignment now resets at each nested block, matching `tofu fmt`, and
+  every bundled example renders fmt-clean.
+- `bandit` findings no longer fail CI: the renderer raises `RenderError` where
+  it previously used `assert` for model invariants, `get_json` rejects
+  non-HTTP URLs, and the two deliberate `subprocess`/`urlopen` uses carry a
+  justified `# nosec`.
+- `uv.lock` picks up patched `certifi`, `filelock`, `msgpack`, `pip` and
+  `urllib3` so `pip-audit` reports no known vulnerabilities.
 - `plan` with a relative `--workdir` (including the documented `.tofu/example`
   quickstart) no longer writes the plan inside a nested workdir path.
 - `--plan-file` and `--var-file` are resolved against the current directory

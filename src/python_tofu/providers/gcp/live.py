@@ -108,9 +108,13 @@ def get_json(
     merged = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     if headers:
         merged.update(headers)
+    scheme = urllib.parse.urlparse(url).scheme
+    if scheme not in ("https", "http"):
+        raise GoogleApiError(f"refusing to call a non-HTTP URL: {url}")
     request = urllib.request.Request(f"{url}?{query}", headers=merged)
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        # The scheme is restricted to http(s) immediately above.
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
             return json.load(response)  # type: ignore[no-any-return]
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:300]
