@@ -20,6 +20,10 @@ The `nix` job is gated on `**.nix`, `flake.lock`, `src/**`, `examples/**`,
 so a Python-only change can break it; before `src/**` was added it ran only on
 `.nix` changes and a renderer regression passed CI unnoticed.
 
+All three filters also match `.github/workflows/**`, so a workflow edit runs the
+jobs it changes instead of passing with only the `changes` job. A docs-only
+change still runs the `docs` filter only.
+
 `nix.yml` runs the full `nix flake check` (which builds the `checks.*`
 derivations, including `format`, `render-example` and `render-clean-example`)
 followed by `nix build .#default` — it is the slowest job and the one that

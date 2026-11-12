@@ -24,6 +24,9 @@ jobs:
               - 'tests/**'
               - 'pyproject.toml'
               - 'uv.lock'
+              # A workflow edit must exercise the jobs it changes; otherwise
+              # editing CI is the one change CI never validates.
+              - '.github/workflows/**'
             nix:
               - '**.nix'
               - 'flake.lock'
@@ -34,9 +37,11 @@ jobs:
               - 'examples/**'
               - 'pyproject.toml'
               - 'uv.lock'
+              - '.github/workflows/**'
             docs:
               - 'docs/**'
               - '*.md'
+              - '.github/workflows/**'
 
   lint:
     needs: changes
