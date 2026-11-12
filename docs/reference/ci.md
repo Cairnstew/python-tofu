@@ -15,6 +15,11 @@ other branch does not start CI; open a pull request instead. The
 `test-integration`, `nix` and `audit` jobs are gated by `dorny/paths-filter`, so
 a docs-only change runs nothing.
 
+The `nix` job is gated on `**.nix`, `flake.lock`, `src/**`, `examples/**`,
+`pyproject.toml` and `uv.lock`. It builds the package and renders every example,
+so a Python-only change can break it; before `src/**` was added it ran only on
+`.nix` changes and a renderer regression passed CI unnoticed.
+
 `nix.yml` runs the full `nix flake check` (which builds the `checks.*`
 derivations, including `format`, `render-example` and `render-clean-example`)
 followed by `nix build .#default` — it is the slowest job and the one that

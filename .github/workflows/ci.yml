@@ -27,6 +27,13 @@ jobs:
             nix:
               - '**.nix'
               - 'flake.lock'
+              # The nix job builds the package and renders the examples, so a
+              # Python or example change can break it. Without these it only
+              # runs when a .nix file changes and silently skips the renderer.
+              - 'src/**'
+              - 'examples/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
             docs:
               - 'docs/**'
               - '*.md'
