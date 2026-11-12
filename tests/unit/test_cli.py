@@ -153,6 +153,115 @@ def test_example_config_renders(runner: CliRunner, cli, tmp_path: Path) -> None:
     assert "example-bootstrap" in (tmp_path / "example" / "main.tf").read_text()
 
 
+def test_plan_exit_code_exits_2_with_changes(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path, fake_tofu: Path
+) -> None:
+    result = runner.invoke(
+        cli,
+        [
+            "plan",
+            "--config",
+            str(config_file),
+            "--workdir",
+            str(tmp_path / "tofu"),
+            "--binary",
+            str(fake_tofu),
+            "--no-init",
+            "--exit-code",
+        ],
+    )
+
+    assert result.exit_code == 2, _combined(result)
+    assert "Plan: 1 to create" in result.output
+
+
+def _quiet_tofu(tmp_path: Path) -> Path:
+    """A fake ``tofu`` whose plan is empty and whose summary has no changes."""
+
+    binary = tmp_path / "quiet-tofu"
+    binary.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        '  show) echo \'{"resource_changes":[{"change":{"actions":["no-op"]}}]}\' ;;\n'
+        "esac\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    binary.chmod(0o755)
+    return binary
+
+
+def test_plan_exit_code_exits_0_without_changes(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path
+) -> None:
+    result = runner.invoke(
+        cli,
+        [
+            "plan",
+            "--config",
+            str(config_file),
+            "--workdir",
+            str(tmp_path / "tofu"),
+            "--binary",
+            str(_quiet_tofu(tmp_path)),
+            "--no-init",
+            "--exit-code",
+        ],
+    )
+
+    assert result.exit_code == 0, _combined(result)
+    assert "Plan: no changes" in result.output
+
+
+def test_plan_exit_code_exits_1_when_summary_is_unavailable(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path
+) -> None:
+    binary = tmp_path / "broken-show"
+    binary.write_text(
+        '#!/bin/sh\ncase "$1" in\n  show) echo "boom" >&2; exit 1 ;;\nesac\nexit 0\n',
+        encoding="utf-8",
+    )
+    binary.chmod(0o755)
+
+    result = runner.invoke(
+        cli,
+        [
+            "plan",
+            "--config",
+            str(config_file),
+            "--workdir",
+            str(tmp_path / "tofu"),
+            "--binary",
+            str(binary),
+            "--no-init",
+            "--exit-code",
+        ],
+    )
+
+    assert result.exit_code == 1, _combined(result)
+    assert "Could not parse plan summary" in _combined(result)
+
+
+def test_plan_without_exit_code_stays_0_with_changes(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path, fake_tofu: Path
+) -> None:
+    result = runner.invoke(
+        cli,
+        [
+            "plan",
+            "--config",
+            str(config_file),
+            "--workdir",
+            str(tmp_path / "tofu"),
+            "--binary",
+            str(fake_tofu),
+            "--no-init",
+        ],
+    )
+
+    assert result.exit_code == 0, _combined(result)
+
+
 def _recording_tofu(tmp_path: Path, record: Path) -> Path:
     """A fake ``tofu`` that records the arguments of plan/apply invocations."""
 
@@ -416,7 +525,7 @@ def test_limits_usage_live_measures_inventory(
 ) -> None:
     from python_tofu.providers.gcp import live
 
-    monkeypatch.setattr(live, "_access_token", lambda stack: "token")
+    monkeypatch.setattr(live, "access_token", lambda stack: "token")
 
     def fake_list(project: str, token: str, asset_type: str) -> list[dict]:
         if asset_type == live.INSTANCE_TYPE:
@@ -431,7 +540,7 @@ def test_limits_usage_live_measures_inventory(
             ]
         return []
 
-    monkeypatch.setattr(live, "_list_assets", fake_list)
+    monkeypatch.setattr(live, "list_assets", fake_list)
     config = _config_within_free_tier(tmp_path)
     result = runner.invoke(cli, ["limits", "--config", str(config), "--usage", "live", "--all"])
     assert result.exit_code == 0, _combined(result)
@@ -451,7 +560,7 @@ def test_usage_live_failure_is_a_clean_error(
     def boom(stack):
         raise live.LiveUsageError("could not obtain Google credentials: missing key")
 
-    monkeypatch.setattr(live, "_access_token", boom)
+    monkeypatch.setattr(live, "access_token", boom)
     config = _config_within_free_tier(tmp_path)
     result = runner.invoke(
         cli,
@@ -470,7 +579,7 @@ def test_limits_off_skips_live_measurement(
     def boom(stack):
         raise AssertionError("live measurement must not run with --limits off")
 
-    monkeypatch.setattr(live, "_access_token", boom)
+    monkeypatch.setattr(live, "access_token", boom)
     config = _config_within_free_tier(tmp_path)
     result = runner.invoke(
         cli,

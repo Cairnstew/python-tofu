@@ -8,6 +8,7 @@ from python_tofu.core.hcl import (
     attr,
     block,
     body,
+    ref,
     render,
     render_value,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "attr",
     "block",
     "body",
+    "ref",
     "render",
     "render_value",
 ]

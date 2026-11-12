@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, NoReturn
+from typing import Any, NoReturn, Sequence
 
 import typer
 
 from python_tofu.core.cli.context import AppContext
-from python_tofu.core.exceptions import ConfigError, TofuError
+from python_tofu.core.exceptions import ConfigError, PruneError, TofuError
 from python_tofu.core.limits import (
     LimitCheck,
     LimitMode,
@@ -16,7 +16,8 @@ from python_tofu.core.limits import (
     Throttler,
     UsageMode,
 )
-from python_tofu.core.models import BaseStack
+from python_tofu.core.models import BaseStack, PruneConfig
+from python_tofu.core.prune import PrunePlan, Reaper
 from python_tofu.core.renderer import BaseRenderer
 from python_tofu.core.results import CommandResult, RenderResult
 from python_tofu.core.runner import TofuRunner
@@ -81,7 +82,7 @@ class BaseCommand:
         if policy is None:
             return None
 
-        effective = mode or self.ctx.limit_mode or policy.default_mode
+        effective = mode or self.ctx.limit_mode or stack.limits_mode or policy.default_mode
         if effective is LimitMode.OFF:
             return None
 
@@ -104,6 +105,97 @@ class BaseCommand:
 
     def runner(self) -> TofuRunner:
         return self.ctx.runner()
+
+    # ── pruning ───────────────────────────────────────────────────────
+    def prune_sections(
+        self,
+        stack: BaseStack,
+        enabled: bool | None = None,
+        sections: list[str] | None = None,
+    ) -> tuple[str, ...]:
+        """Resolve the stack config and CLI overrides into concrete sections.
+
+        Returns an empty tuple when pruning stays disabled, so callers can use
+        the result as a simple "should I prune?" check.
+        """
+
+        provider = self.ctx.provider
+        if not provider.can_prune:
+            if enabled or sections:
+                self.abort(f"provider {provider.name!r} does not support pruning")
+            return ()
+
+        if sections:
+            chosen: tuple[str, ...] = tuple(dict.fromkeys(sections))
+        else:
+            chosen = stack.prune.sections
+
+        active = True if sections else (stack.prune.enabled if enabled is None else enabled)
+        if not active:
+            return ()
+        try:
+            return PruneConfig(enabled=True, sections=chosen).resolve(provider.prune_sections)
+        except ValueError as exc:
+            self.abort(str(exc))
+
+    def prune(
+        self,
+        stack: BaseStack,
+        sections: tuple[str, ...],
+        *,
+        dry_run: bool,
+        auto_approve: bool = False,
+    ) -> None:
+        """Discover and (unless ``dry_run``) delete undeclared live resources."""
+
+        if not sections:
+            return
+        try:
+            plan = self.ctx.provider.plan_prune(stack, sections)
+        except TofuError as exc:
+            self.abort(str(exc))
+
+        for warning in plan.warnings:
+            typer.secho(f"Note: {warning}", fg=typer.colors.YELLOW, err=True)
+        if plan.empty:
+            return
+
+        self._print_prune_plan(plan, sections)
+        if dry_run:
+            typer.echo("Dry run: no resources were deleted (re-run with apply or --apply).")
+            return
+
+        if not auto_approve:
+            typer.confirm(
+                f"Delete {len(plan.resources)} resource(s) not declared by the stack?",
+                abort=True,
+            )
+
+        def _echo(args: Sequence[str]) -> None:
+            typer.echo("$ " + " ".join(args))
+
+        reaper = Reaper(
+            self.ctx.workdir,
+            self.ctx.renderer(),
+            stack,
+            binary=self.ctx.binary,
+            on_command=_echo if self.ctx.verbose else None,
+        )
+        try:
+            for _section, group in plan.by_section(sections):
+                reaper.reap(group)
+        except PruneError as exc:
+            self.abort(str(exc))
+
+        typer.echo(f"Pruned {len(plan.resources)} resource(s).")
+
+    @staticmethod
+    def _print_prune_plan(plan: PrunePlan, sections: tuple[str, ...]) -> None:
+        typer.echo(f"Prune plan: {len(plan.resources)} undeclared resource(s)")
+        for section, group in plan.by_section(sections):
+            typer.echo(f"  {section}:")
+            for resource in group:
+                typer.echo(f"    - {resource.description}")
 
     def run_tofu(self, action: str, **kwargs: Any) -> CommandResult:
         """Run a :class:`TofuRunner` method and report it like a command.

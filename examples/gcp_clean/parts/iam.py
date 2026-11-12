@@ -1,6 +1,6 @@
 """IAM: service accounts with their role bindings, plus standalone members."""
 
-from python_tofu import ProjectIamMember, ServiceAccount
+from python_tofu import ProjectIamMember, ServiceAccount, StackPart
 
 from .foundation import PROJECT
 
@@ -30,3 +30,5 @@ iam_members = [
         member="group:platform@example.com",
     ),
 ]
+
+part = StackPart(name="iam", service_accounts=service_accounts, iam_members=iam_members)

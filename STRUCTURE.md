@@ -9,6 +9,7 @@
 │   │
 │   ├── core/                     # Provider-agnostic engine
 │   │   ├── __init__.py
+│   │   ├── doctor.py             # CheckResult/DoctorReport for the doctor command
 │   │   ├── exceptions.py         # TofuError hierarchy
 │   │   ├── hcl.py                # Dependency-free HCL writer (Attr/Block/Raw)
 │   │   ├── limits.py             # Limit/LimitPolicy/Usage/Throttler + reports
@@ -16,6 +17,7 @@
 │   │   ├── results.py            # RenderResult, PlanSummary, CommandResult
 │   │   ├── loader.py             # load_stack(path, stack_type)
 │   │   ├── provider.py           # Provider contract + registry
+│   │   ├── prune.py              # PrunableResource/PrunePlan + scratch-module Reaper
 │   │   ├── renderer.py           # BaseRenderer: file contract + terraform block
 │   │   ├── runner.py             # TofuRunner subprocess wrapper
 │   │   └── cli/
@@ -28,7 +30,9 @@
 │   │           ├── render.py
 │   │           ├── init.py
 │   │           ├── validate.py
+│   │           ├── doctor.py     # Read-only preflight checklist
 │   │           ├── plan.py
+│   │           ├── prune.py
 │   │           ├── apply.py
 │   │           ├── destroy.py
 │   │           ├── output.py
@@ -45,7 +49,11 @@
 │   │       ├── limits.py         # GCP_FREE_TIER policy + usage measurement
 │   │       ├── live.py           # Cloud Asset Inventory live measurement
 │   │       ├── renderer.py       # GcpRenderer(BaseRenderer[GcpStack])
-│   │       └── provider.py       # GCP Provider instance
+│   │       ├── parts.py          # StackPart + compose() for multi-file stacks
+│   │       ├── provider.py       # GCP Provider instance
+│   │       └── cli/
+│   │           ├── apis.py       # GCP-specific `apis` command
+│   │           └── doctor.py     # GCP preflight checks
 │   │
 │   ├── exceptions.py             # Shim → core.exceptions
 │   ├── hcl.py                    # Shim → core.hcl
@@ -67,6 +75,16 @@
 │   ├── gcp_bootstrap/
 │   │   ├── infra.py              # Single-file end-to-end example
 │   │   └── README.md
+│   ├── gcp_biglake/
+│   │   ├── stack.py              # BigLake catalog/database/table via extra_files
+│   │   └── README.md
+│   ├── gcp_cloud_run/
+│   │   ├── stack.py              # Image-based service + source-based function
+│   │   ├── hello/                # Function source zipped by the config
+│   │   └── README.md
+│   ├── gcp_apis/
+│   │   ├── stack.py              # Service Usage-validated API enablement
+│   │   └── README.md
 │   └── gcp_clean/
 │       ├── stack.py              # Wires the parts together
 │       └── parts/                # foundation / storage / iam
@@ -81,7 +99,13 @@
 │   │   ├── test_runner.py
 │   │   ├── test_loader.py
 │   │   ├── test_cli.py
-│   │   └── test_cli_registry.py  # Registry, custom commands, plugin discovery
+│   │   ├── test_cli_registry.py  # Registry, custom commands, plugin discovery
+│   │   ├── test_gcp_budget.py     # BillingBudget validation and HCL
+│   │   ├── test_stack_profile.py  # preview profile + stack limits_mode
+│   │   ├── test_compose.py        # StackPart/compose merging and duplicates
+│   │   ├── test_outputs.py       # Output model, ref(), output block rendering
+│   │   ├── test_stack_isolation.py # Per-stack workdir and state prefix
+│   │   └── test_doctor.py        # Preflight checks with a fake Google API
 │   ├── integration/
 │   │   └── test_cli_invocation.py
 │   └── nix_eval/
@@ -186,6 +210,14 @@ BaseStack (core)                    ← required_version, backend
       ├── StorageBucket   → google_storage_bucket
       ├── BucketObject    → google_storage_bucket_object (+ data "http" for URLs)
       ├── ProjectIamMember→ google_project_iam_member
+      ├── CloudRunService → google_cloud_run_v2_service
+      ├── CloudRunFunction → google_cloudfunctions2_function (+ source object)
+      ├── CloudRunJob      → google_cloud_run_v2_job
+      ├── CloudRunWorkerPool → google_cloud_run_v2_worker_pool
+      ├── ArtifactRegistryRepository → google_artifact_registry_repository
+      ├── apis.py         → required APIs per resource + depends_on ordering
+      ├── PubSubTopic      → google_pubsub_topic
+      ├── PubSubSubscription → google_pubsub_subscription (+ push OIDC, DLQ IAM)
       ├── GcpBackendConfig→ terraform { backend "..." { ... } }
       └── usage_estimates  → LimitPolicy usage (free-tier checks)
 ```

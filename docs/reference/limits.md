@@ -30,8 +30,9 @@ python-tofu render --config infra.py --fail-on-unknown  # block on unknowns
 stays defined.
 
 The default mode comes from the provider policy (`error` for the GCP free-tier
-policy). Type-level limits (`Limit.action = warn`) still only warn in `error`
-mode.
+policy), then the stack's `limits_mode` (set by `profile="preview"` to
+`warn`), then the CLI default. Type-level limits (`Limit.action = warn`) still
+only warn in `error` mode.
 
 `--usage` defaults to `stack` (offline, declared resources only). `--usage live`
 asks the provider to measure existing infrastructure; live values win for the
@@ -131,6 +132,21 @@ project. They do not roll over.
 | `gcp.web_risk.calls` | ai_api | 100,000 | month |
 | `gcp.workload_manager.evaluations` | misc | 5,000 | month |
 | `gcp.cloud_deploy.active_pipelines` | misc | 1 | total |
+
+GKE's free tier is a **$74.40/month credit per billing account** that offsets the
+$0.10/cluster/hour management fee for one **zonal Standard or Autopilot**
+cluster. Regional cluster management fees, worker nodes (Standard) and pod
+resource requests (Autopilot) are not covered. `--usage live` counts eligible
+clusters in the stack's project only, while the credit is billing-account-wide,
+so the count is a lower bound.
+
+Cloud Run's free tier depends on the billing mode. Request-based services get
+2,000,000 requests, 180,000 vCPU-seconds and 360,000 GiB-seconds per month;
+instance-based services and jobs get 240,000 vCPU-seconds and 450,000
+GiB-seconds (no request charge); delayed jobs and worker pools have larger
+allowances. Egress is 1 GiB within North America. GPU time is never free, and
+min-instance idle time is billed and consumes the allowance. The policy above
+models the request-based service tier.
 
 Aggregate `gcp.free_tier.total` sums the normalised usage of every limit; it
 warns at more than one full free tier by default so it does not block on its

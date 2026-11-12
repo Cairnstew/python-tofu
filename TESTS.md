@@ -20,7 +20,13 @@ tests/
 │   ├── test_runner.py     #   Command construction, JSON parsing, errors
 │   ├── test_loader.py     #   Config module import and error wrapping
 │   ├── test_cli.py        #   Typer CliRunner + fake tofu binary
-│   └── test_cli_registry.py # Command registry, aliases, plugin discovery
+│   ├── test_cli_registry.py # Command registry, aliases, plugin discovery
+│   ├── test_outputs.py    #   Output/ref rendering and validation
+│   ├── test_gcp_budget.py #   BillingBudget validation and rendering
+│   ├── test_stack_profile.py # preview profile and stack limits_mode
+│   ├── test_compose.py    #   StackPart/compose merging and duplicates
+│   ├── test_stack_isolation.py # Default workdir and GCS prefix per stack
+│   └── test_doctor.py     #   Doctor checks with a fake Google API
 │
 ├── integration/           # CLI subprocess invocation
 │   └── test_cli_invocation.py

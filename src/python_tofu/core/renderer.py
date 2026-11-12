@@ -12,7 +12,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Generic, TypeVar
 
-from python_tofu.core.hcl import Attr, Block, body, render
+from python_tofu.core.exceptions import RenderError
+from python_tofu.core.hcl import Attr, Block, attr, body, render
 from python_tofu.core.models import BackendConfig, BaseStack
 from python_tofu.core.results import RenderResult
 
@@ -57,6 +58,22 @@ class BaseRenderer(ABC, Generic[StackT]):
 
         return {}
 
+    def output_blocks(self, stack: StackT) -> list[Block]:
+        """Return top-level ``output`` blocks, rendered after resources."""
+
+        return [
+            Block(
+                "output",
+                (item.name,),
+                body(
+                    Attr("value", item.value),
+                    attr("description", item.description),
+                    attr("sensitive", True) if item.sensitive else None,
+                ),
+            )
+            for item in stack.outputs
+        ]
+
     def backend_block(self, stack: StackT) -> Block | None:
         """Render a generic ``backend`` block, or override for typed backends."""
 
@@ -87,22 +104,42 @@ class BaseRenderer(ABC, Generic[StackT]):
             ),
         )
 
+    def _extra_files(self, stack: StackT) -> dict[str, str]:
+        """Validate and return the stack's raw-HCL escape-hatch files."""
+
+        extra = dict(stack.extra_files)
+        for name in extra:
+            target = Path(name)
+            if target.name != name or name in ("", ".", ".."):
+                raise RenderError(f"extra_files name must be a flat file name: {name!r}")
+            if name in self.MANAGED_FILES:
+                raise RenderError(
+                    f"extra_files may not override managed file {name!r}; "
+                    f"managed files are {', '.join(self.MANAGED_FILES)}"
+                )
+            if not (name.endswith(".tf") or name.endswith(".tf.json")):
+                raise RenderError(f"extra_files must end in .tf or .tf.json, got {name!r}")
+        return extra
+
     def render_text(self, stack: StackT) -> dict[str, str]:
         """Return the generated file contents without touching the filesystem."""
 
         data = self.data_blocks(stack)
         blocks = self.resource_blocks(stack)
+        outputs = self.output_blocks(stack)
         main = (
-            render(*data, *blocks)
-            if (data or blocks)
+            render(*data, *blocks, *outputs)
+            if (data or blocks or outputs)
             else "# No resources declared in the stack.\n"
         )
-        return {
+        contents = {
             "versions.tf": render(self.terraform_block(stack)),
             "providers.tf": render(*self.provider_blocks(stack)),
             "main.tf": main,
             ".gitignore": self.GITIGNORE,
         }
+        contents.update(self._extra_files(stack))
+        return contents
 
     def render(self, stack: StackT) -> RenderResult:
         """Write every managed file into :attr:`workdir`."""

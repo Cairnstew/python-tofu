@@ -68,8 +68,8 @@ def inventory(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[dict[str, Any]]
             {"location": "europe-west1", "autopilot": {"enabled": True}},
         ],
     }
-    monkeypatch.setattr(live, "_access_token", lambda stack: "token")
-    monkeypatch.setattr(live, "_list_assets", lambda project, token, asset_type: data[asset_type])
+    monkeypatch.setattr(live, "access_token", lambda stack: "token")
+    monkeypatch.setattr(live, "list_assets", lambda project, token, asset_type: data[asset_type])
     return data
 
 
@@ -114,8 +114,8 @@ def test_live_usage_counts_only_free_tier_resources(
 def test_live_usage_marks_inventory_keys_observed_even_at_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(live, "_access_token", lambda stack: "token")
-    monkeypatch.setattr(live, "_list_assets", lambda project, token, asset_type: [])
+    monkeypatch.setattr(live, "access_token", lambda stack: "token")
+    monkeypatch.setattr(live, "list_assets", lambda project, token, asset_type: [])
     usage = live_measure_usage(stack())
     for key in (
         "gcp.compute.e2_micro_hours",
@@ -141,8 +141,8 @@ def test_list_assets_paginates_and_skips_missing_resource_data(
         calls.append(dict(params))
         return pages[len(calls) - 1]
 
-    monkeypatch.setattr(live, "_get_json", fake_get)
-    data = live._list_assets("demo-project", "token", live.INSTANCE_TYPE)
+    monkeypatch.setattr(live, "get_json", fake_get)
+    data = live.list_assets("demo-project", "token", live.INSTANCE_TYPE)
     assert [item["name"] for item in data] == ["a", "b"]
     assert calls[0]["assetTypes"] == live.INSTANCE_TYPE
     assert calls[0]["contentType"] == "RESOURCE"
@@ -152,10 +152,10 @@ def test_list_assets_paginates_and_skips_missing_resource_data(
 def test_provider_live_usage_overrides_stack_estimates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(live, "_access_token", lambda stack: "token")
+    monkeypatch.setattr(live, "access_token", lambda stack: "token")
     monkeypatch.setattr(
         live,
-        "_list_assets",
+        "list_assets",
         lambda project, token, asset_type: (
             [e2_micro("us-central1-a")] if asset_type == live.INSTANCE_TYPE else []
         ),
@@ -182,6 +182,6 @@ def test_live_measurement_requires_credentials(monkeypatch: pytest.MonkeyPatch) 
     def boom(stack: GcpStack) -> str:
         raise LiveUsageError("could not obtain Google credentials: no key")
 
-    monkeypatch.setattr(live, "_access_token", boom)
+    monkeypatch.setattr(live, "access_token", boom)
     with pytest.raises(LiveUsageError, match="credentials"):
         live_measure_usage(stack())

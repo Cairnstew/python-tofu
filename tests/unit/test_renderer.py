@@ -56,7 +56,9 @@ def test_render_writes_managed_files(tmp_path: Path, sample_stack: GcpStack) -> 
     workdir = tmp_path / "tofu"
     result = Renderer(workdir).render(sample_stack)
 
-    assert result.resources == 6
+    # Six declared resources plus three auto-enabled APIs (service usage, IAM,
+    # Cloud Resource Manager) that their resources need.
+    assert result.resources == 9
     assert workdir.is_dir()
     assert {path.name for path in result.files} == {
         "versions.tf",
@@ -65,6 +67,37 @@ def test_render_writes_managed_files(tmp_path: Path, sample_stack: GcpStack) -> 
         ".gitignore",
     }
     assert "*.tfstate" in (workdir / ".gitignore").read_text()
+
+
+def test_extra_files_are_written(tmp_path: Path, sample_stack: GcpStack) -> None:
+    stack = sample_stack.model_copy(
+        update={"extra_files": {"biglake.tf": 'resource "google_biglake_catalog" "x" {}\n'}}
+    )
+
+    files = Renderer(tmp_path).render_text(stack)
+    assert "biglake.tf" in files
+    assert "google_biglake_catalog" in files["biglake.tf"]
+
+    result = Renderer(tmp_path).render(stack)
+    assert (tmp_path / "biglake.tf").read_text() == files["biglake.tf"]
+    assert "biglake.tf" in {path.name for path in result.files}
+    # Six declared resources plus three auto-enabled APIs (service usage, IAM,
+    # Cloud Resource Manager) that their resources need.
+    assert result.resources == 9
+
+
+def test_extra_files_cannot_override_managed(tmp_path: Path, sample_stack: GcpStack) -> None:
+    stack = sample_stack.model_copy(update={"extra_files": {"main.tf": "# nope\n"}})
+
+    with pytest.raises(RenderError, match="managed file"):
+        Renderer(tmp_path).render_text(stack)
+
+
+def test_extra_files_require_flat_tf_names(tmp_path: Path, sample_stack: GcpStack) -> None:
+    for name in ("nested/extra.tf", "extra.hcl", ""):
+        stack = sample_stack.model_copy(update={"extra_files": {name: "# nope\n"}})
+        with pytest.raises(RenderError):
+            Renderer(tmp_path).render_text(stack)
 
 
 def test_render_is_deterministic(sample_stack: GcpStack) -> None:

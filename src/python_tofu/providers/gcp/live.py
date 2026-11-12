@@ -32,7 +32,9 @@ from python_tofu.core.limits import Usage
 from python_tofu.providers.gcp.stack import GcpStack
 
 CAI_BASE = "https://cloudasset.googleapis.com/v1"
-CAI_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+#: Scope shared by Cloud Asset Inventory and Service Usage reads.
+CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+CAI_SCOPE = CLOUD_PLATFORM_SCOPE
 
 # Always-free Compute Engine regions.
 FREE_COMPUTE_REGIONS = frozenset({"us-central1", "us-east1", "us-west1"})
@@ -46,72 +48,87 @@ INSTANCE_TYPE = "compute.googleapis.com/Instance"
 CLUSTER_TYPE = "container.googleapis.com/Cluster"
 
 
-class LiveUsageError(TofuError):
-    """Raised when live inventory measurement cannot be completed."""
+class GoogleApiError(TofuError):
+    """Raised when a read-only Google API call cannot be completed."""
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
-def _access_token(stack: GcpStack) -> str:
-    """Return an OAuth token for the stack's credentials (ADC fallback)."""
+#: Backwards-compatible name: live measurement was the first user of the client.
+LiveUsageError = GoogleApiError
+
+
+def access_token_for(credentials_path: str | None = None) -> str:
+    """Return an OAuth token for a key path (ADC fallback)."""
 
     try:
         from google.auth.transport.requests import Request
         from google.oauth2 import service_account
     except ImportError as exc:  # pragma: no cover - dependency is declared
-        raise LiveUsageError(
-            "live usage requires google-auth; reinstall python-tofu or run "
+        raise GoogleApiError(
+            "Google API access requires google-auth; reinstall python-tofu or run "
             "`uv sync` to restore dependencies"
         ) from exc
 
-    scopes = [CAI_SCOPE]
-    credentials_path = stack.provider.credentials or os.environ.get(
-        "GOOGLE_APPLICATION_CREDENTIALS"
-    )
+    scopes = [CLOUD_PLATFORM_SCOPE]
+    path = credentials_path or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     try:
-        if credentials_path:
+        if path:
             loader = service_account.Credentials.from_service_account_file
-            credentials = loader(  # type: ignore[no-untyped-call]
-                credentials_path, scopes=scopes
-            )
+            creds = loader(path, scopes=scopes)  # type: ignore[no-untyped-call]
         else:
             import google.auth
 
-            credentials, _ = google.auth.default(scopes=scopes)
-        credentials.refresh(Request())
+            creds, _ = google.auth.default(scopes=scopes)
+        creds.refresh(Request())
     except Exception as exc:  # google-auth raises several unrelated types
-        raise LiveUsageError(f"could not obtain Google credentials: {exc}") from exc
+        raise GoogleApiError(f"could not obtain Google credentials: {exc}") from exc
 
-    token = getattr(credentials, "token", None)
+    token = getattr(creds, "token", None)
     if not token:
-        raise LiveUsageError("Google credentials returned no access token")
+        raise GoogleApiError("Google credentials returned no access token")
     return str(token)
 
 
-def _get_json(url: str, token: str, params: dict[str, str]) -> dict[str, Any]:
+def access_token(stack: GcpStack) -> str:
+    """Return an OAuth token for the stack's credentials (ADC fallback)."""
+
+    return access_token_for(stack.provider.credentials)
+
+
+def get_json(
+    url: str,
+    token: str,
+    params: dict[str, str],
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
     query = urllib.parse.urlencode(params)
-    request = urllib.request.Request(
-        f"{url}?{query}",
-        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-    )
+    merged = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    if headers:
+        merged.update(headers)
+    request = urllib.request.Request(f"{url}?{query}", headers=merged)
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             return json.load(response)  # type: ignore[no-any-return]
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:300]
-        raise LiveUsageError(
-            f"Cloud Asset Inventory returned {exc.code} for {url}: {detail}"
+        raise GoogleApiError(
+            f"Google API returned {exc.code} for {url}: {detail}", status=exc.code
         ) from None
     except urllib.error.URLError as exc:
-        raise LiveUsageError(f"could not reach Cloud Asset Inventory: {exc.reason}") from None
+        raise GoogleApiError(f"could not reach Google API {url}: {exc.reason}") from None
 
 
-def _list_assets(project: str, token: str, asset_type: str) -> list[dict[str, Any]]:
+def list_assets(project: str, token: str, asset_type: str) -> list[dict[str, Any]]:
     """Return ``resource.data`` for every asset of ``asset_type`` in ``project``."""
 
     url = f"{CAI_BASE}/projects/{project}/assets"
     params = {"assetTypes": asset_type, "contentType": "RESOURCE", "pageSize": "500"}
     resources: list[dict[str, Any]] = []
     while True:
-        payload = _get_json(url, token, params)
+        payload = get_json(url, token, params)
         for asset in payload.get("assets", []):
             data = (asset.get("resource") or {}).get("data")
             if isinstance(data, dict):
@@ -164,16 +181,16 @@ def _is_free_tier_cluster(data: dict[str, Any]) -> bool:
 def live_measure_usage(stack: GcpStack) -> Usage:
     """Measure pre-existing GCP infrastructure that maps to countable limits."""
 
-    token = _access_token(stack)
+    token = access_token(stack)
     project = stack.provider.project
 
-    instances = _list_assets(project, token, INSTANCE_TYPE)
+    instances = list_assets(project, token, INSTANCE_TYPE)
     micro_hours = HOURS_PER_MONTH * sum(1 for data in instances if _is_free_tier_e2_micro(data))
 
-    disks = _list_assets(project, token, DISK_TYPE)
+    disks = list_assets(project, token, DISK_TYPE)
     disk_gb = sum(_disk_size_gb(data) for data in disks if _is_free_tier_disk(data))
 
-    clusters = _list_assets(project, token, CLUSTER_TYPE)
+    clusters = list_assets(project, token, CLUSTER_TYPE)
     free_clusters = sum(1 for data in clusters if _is_free_tier_cluster(data))
 
     return (
@@ -185,8 +202,14 @@ def live_measure_usage(stack: GcpStack) -> Usage:
 
 
 __all__ = [
+    "CLOUD_PLATFORM_SCOPE",
     "FREE_COMPUTE_REGIONS",
+    "GoogleApiError",
     "HOURS_PER_MONTH",
     "LiveUsageError",
+    "access_token",
+    "access_token_for",
+    "get_json",
+    "list_assets",
     "live_measure_usage",
 ]

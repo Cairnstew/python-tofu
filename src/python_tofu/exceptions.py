@@ -2,6 +2,7 @@
 
 from python_tofu.core.exceptions import (
     ConfigError,
+    PruneError,
     RenderError,
     TofuCommandError,
     TofuError,
@@ -10,6 +11,7 @@ from python_tofu.core.exceptions import (
 
 __all__ = [
     "ConfigError",
+    "PruneError",
     "RenderError",
     "TofuCommandError",
     "TofuError",

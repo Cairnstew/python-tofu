@@ -10,18 +10,13 @@ State is local by default; add ``backend=BackendConfig(kind="gcs", bucket=...)``
 once several people need to share it.
 """
 
-from parts.foundation import apis, projects, provider
-from parts.iam import iam_members, service_accounts
-from parts.storage import bucket_objects, buckets
+from parts.foundation import part as foundation
+from parts.foundation import provider
+from parts.iam import part as iam
+from parts.storage import part as storage
 
-from python_tofu import GcpStack
+from python_tofu import GcpStack, compose
 
-stack = GcpStack(
-    provider=provider,
-    projects=projects,
-    apis=apis,
-    service_accounts=service_accounts,
-    iam_members=iam_members,
-    buckets=buckets,
-    bucket_objects=bucket_objects,
-)
+# `compose` merges the parts and rejects the same bucket, topic or account
+# declared twice, naming both parts in the error.
+stack = GcpStack(provider=provider, **compose(foundation, storage, iam))

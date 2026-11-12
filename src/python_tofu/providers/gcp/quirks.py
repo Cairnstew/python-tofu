@@ -17,6 +17,16 @@ from python_tofu.core.exceptions import RenderError
 PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
 BUCKET_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$")
 SERVICE_ACCOUNT_ID_RE = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
+CLOUD_RUN_SERVICE_NAME_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,47}[a-z0-9])?$")
+CLOUD_FUNCTION_NAME_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+ENV_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+CLOUD_RUN_MEMORY_RE = re.compile(r"^[0-9]+(?:Mi|Gi)$")
+FUNCTION_MEMORY_RE = re.compile(r"^[0-9]+(?:k|M|G|Mi|Gi)?$")
+TIMEOUT_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)?s$")
+SECRET_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,255}$")
+ARTIFACT_REPO_ID_RE = re.compile(r"^[a-z][a-z0-9._-]{1,62}$")
+VOLUME_NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+PUBSUB_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9._~+%-]{2,254}$")
 
 
 def validate_role(role: str) -> str:

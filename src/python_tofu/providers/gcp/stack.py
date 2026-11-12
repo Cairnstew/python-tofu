@@ -2,19 +2,59 @@
 
 from __future__ import annotations
 
+from enum import Enum
+from typing import Any
+
 from pydantic import Field, field_validator, model_validator
 
+from python_tofu.core.limits import LimitMode
 from python_tofu.core.models import BaseStack
 from python_tofu.providers.gcp.models import (
+    GCP_PRUNE_SECTIONS,
+    ArtifactRegistryRepository,
+    BillingBudget,
     BucketObject,
+    CloudRunFunction,
+    CloudRunJob,
+    CloudRunService,
+    CloudRunWorkerPool,
     GcpBackendConfig,
     GcpProject,
     GcpProvider,
     ProjectApi,
     ProjectIamMember,
+    PubSubSubscription,
+    PubSubTopic,
     ServiceAccount,
     StorageBucket,
 )
+
+
+class StackProfile(str, Enum):
+    """A documented bundle of defaults, resolved into the rendered stack."""
+
+    DEFAULT = "default"
+    PREVIEW = "preview"
+
+
+#: Resources whose ``deletion_protection`` a preview profile flips off.
+#: ``google_cloudfunctions2_function`` uses no such attribute (its model field is
+#: not rendered), so functions are not in this list.
+_PROTECTED_COLLECTIONS = (
+    "cloud_run_services",
+    "cloud_run_jobs",
+    "cloud_run_worker_pools",
+)
+
+
+def _preview_resource(item: Any) -> Any:
+    """Return ``item`` with deletion protection off unless it was set explicitly."""
+
+    if isinstance(item, dict):
+        return item if "deletion_protection" in item else {**item, "deletion_protection": False}
+    if "deletion_protection" in getattr(item, "model_fields_set", set()):
+        return item
+    return item.model_copy(update={"deletion_protection": False})
 
 
 class GcpStack(BaseStack):
@@ -27,7 +67,23 @@ class GcpStack(BaseStack):
     buckets: list[StorageBucket] = Field(default_factory=list)
     bucket_objects: list[BucketObject] = Field(default_factory=list)
     iam_members: list[ProjectIamMember] = Field(default_factory=list)
+    cloud_run_services: list[CloudRunService] = Field(default_factory=list)
+    cloud_run_functions: list[CloudRunFunction] = Field(default_factory=list)
+    cloud_run_jobs: list[CloudRunJob] = Field(default_factory=list)
+    cloud_run_worker_pools: list[CloudRunWorkerPool] = Field(default_factory=list)
+    pubsub_topics: list[PubSubTopic] = Field(default_factory=list)
+    pubsub_subscriptions: list[PubSubSubscription] = Field(default_factory=list)
+    artifact_registry_repositories: list[ArtifactRegistryRepository] = Field(default_factory=list)
     backend: GcpBackendConfig | None = None
+    billing_budgets: list[BillingBudget] = Field(default_factory=list)
+    profile: StackProfile = Field(
+        default=StackProfile.DEFAULT,
+        description=(
+            "Documented default bundle. `preview` flips deletion protection off, "
+            "enables pruning, uses local state, warns on limits and adds the "
+            "`ephemeral=true` label. Explicit per-resource values always win."
+        ),
+    )
     external_projects: list[str] = Field(
         default_factory=list,
         description="Existing project IDs resources may reference without declaring a GcpProject",
@@ -35,6 +91,10 @@ class GcpStack(BaseStack):
     external_buckets: list[str] = Field(
         default_factory=list,
         description="Existing bucket names objects may target without declaring a StorageBucket",
+    )
+    external_topics: list[str] = Field(
+        default_factory=list,
+        description="Existing Pub/Sub topics subscriptions may target without declaring them",
     )
     google_provider_version: str = "~> 6.0"
     usage_estimates: dict[str, float] = Field(
@@ -54,6 +114,60 @@ class GcpStack(BaseStack):
             raise ValueError("usage estimates must be non-negative: " + ", ".join(negative))
         return value
 
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_profile(cls, data: Any) -> Any:
+        """Resolve a profile into concrete values; explicit choices always win."""
+
+        if not isinstance(data, dict):
+            return data
+        profile = data.get("profile", StackProfile.DEFAULT)
+        if profile not in (StackProfile.PREVIEW, StackProfile.PREVIEW.value):
+            return data
+
+        resolved = dict(data)
+
+        for field_name in _PROTECTED_COLLECTIONS:
+            items = resolved.get(field_name)
+            if not items:
+                continue
+            resolved[field_name] = [_preview_resource(item) for item in items]
+
+        if "prune" not in resolved:
+            resolved["prune"] = {"enabled": True}
+        if "limits_mode" not in resolved:
+            resolved["limits_mode"] = LimitMode.WARN
+
+        backend = resolved.get("backend")
+        if backend is not None:
+            if isinstance(backend, dict):
+                if "kind" not in backend:
+                    resolved["backend"] = {
+                        "path": "terraform.tfstate",
+                        **backend,
+                        "kind": "local",
+                    }
+            elif "kind" not in backend.model_fields_set:
+                resolved["backend"] = backend.model_copy(
+                    update={"kind": "local", "path": backend.path or "terraform.tfstate"}
+                )
+
+        provider = resolved.get("provider")
+        if isinstance(provider, GcpProvider):
+            labels = {**provider.default_labels, "ephemeral": "true"}
+            if labels != provider.default_labels:
+                resolved["provider"] = provider.model_copy(update={"default_labels": labels})
+        elif isinstance(provider, dict):
+            labels = {**provider.get("default_labels", {}), "ephemeral": "true"}
+            resolved["provider"] = {**provider, "default_labels": labels}
+
+        return resolved
+
+    @model_validator(mode="after")
+    def _prune_sections_are_supported(self) -> "GcpStack":
+        self.prune.resolve(GCP_PRUNE_SECTIONS)
+        return self
+
     @model_validator(mode="after")
     def _references_are_known(self) -> "GcpStack":
         known = {self.provider.project, *self.external_projects}
@@ -64,6 +178,13 @@ class GcpStack(BaseStack):
             *[item.project for item in self.service_accounts],
             *[item.project for item in self.buckets],
             *[item.project for item in self.iam_members],
+            *[item.project for item in self.cloud_run_services],
+            *[item.project for item in self.cloud_run_functions],
+            *[item.project for item in self.cloud_run_jobs],
+            *[item.project for item in self.cloud_run_worker_pools],
+            *[item.project for item in self.artifact_registry_repositories],
+            *[item.project for item in self.pubsub_topics],
+            *[item.project for item in self.pubsub_subscriptions],
         }
         missing = sorted(referenced - known)
         if missing:
@@ -81,6 +202,90 @@ class GcpStack(BaseStack):
                 + ", ".join(missing_buckets)
                 + ". Declare them in `buckets` or list them in `external_buckets`."
             )
+
+        missing_sources = sorted(
+            {
+                item.source_bucket
+                for item in self.cloud_run_functions
+                if item.source_bucket not in known_buckets
+            }
+        )
+        if missing_sources:
+            raise ValueError(
+                "cloud run functions reference unknown source buckets: "
+                + ", ".join(missing_sources)
+                + ". Declare them in `buckets` or list them in `external_buckets`."
+            )
+
+        known_topics = {topic.name for topic in self.pubsub_topics} | set(self.external_topics)
+        missing_topics = sorted(
+            {
+                item.topic
+                for item in self.pubsub_subscriptions
+                if item.topic.rsplit("/", 1)[-1] not in known_topics
+            }
+        )
+        if missing_topics:
+            raise ValueError(
+                "subscriptions reference unknown topics: "
+                + ", ".join(missing_topics)
+                + ". Declare them in `pubsub_topics` or list them in `external_topics`."
+            )
+
+        missing_dead_letters = sorted(
+            {
+                item.dead_letter.topic
+                for item in self.pubsub_subscriptions
+                if item.dead_letter is not None
+                and item.dead_letter.topic.rsplit("/", 1)[-1] not in known_topics
+            }
+        )
+        if missing_dead_letters:
+            raise ValueError(
+                "subscriptions reference unknown dead-letter topics: "
+                + ", ".join(missing_dead_letters)
+                + ". Declare them in `pubsub_topics` or list them in `external_topics`."
+            )
+
+        known_services = {service.name for service in self.cloud_run_services}
+        missing_push = sorted(
+            {item.push_service for item in self.pubsub_subscriptions if item.push_service}
+            - known_services
+        )
+        if missing_push:
+            raise ValueError(
+                "subscriptions push to unknown Cloud Run services: "
+                + ", ".join(str(item) for item in missing_push)
+                + ". Declare them in `cloud_run_services`."
+            )
+
+        account_ids = {account.account_id for account in self.service_accounts}
+        referenced_accounts = {
+            account
+            for service in self.cloud_run_services
+            for account in service.invoker_service_accounts
+            if "@" not in account
+        } | {
+            item.push_service_account
+            for item in self.pubsub_subscriptions
+            if item.push_service_account and "@" not in item.push_service_account
+        }
+        missing_accounts = sorted(referenced_accounts - account_ids)
+        if missing_accounts:
+            raise ValueError(
+                "unknown service accounts: "
+                + ", ".join(missing_accounts)
+                + ". Declare them in `service_accounts` or pass an email address."
+            )
+
+        for collection, label in (
+            (self.pubsub_topics, "topic"),
+            (self.pubsub_subscriptions, "subscription"),
+        ):
+            names = [item.name for item in collection]
+            duplicates = sorted({name for name in names if names.count(name) > 1})
+            if duplicates:
+                raise ValueError(f"duplicate Pub/Sub {label} names: {duplicates}")
 
         seen_objects: set[tuple[str, str]] = set()
         for item in self.bucket_objects:

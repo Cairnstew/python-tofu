@@ -28,6 +28,20 @@ class Raw:
     text: str
 
 
+def ref(expression: str) -> Raw:
+    """Wrap a bare HCL expression, e.g. ``ref("google_storage_bucket.b.name")``.
+
+    This is the public entry point to :class:`Raw`: it renders the expression
+    verbatim instead of quoting it like a string literal. Use it for outputs,
+    cross-resource references and anything else a model cannot type.
+    """
+
+    text = expression.strip()
+    if not text:
+        raise ValueError("ref() requires a non-empty HCL expression")
+    return Raw(text)
+
+
 @dataclass(frozen=True)
 class Attr:
     """A ``name = value`` attribute."""

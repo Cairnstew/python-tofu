@@ -7,9 +7,12 @@ provider.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from python_tofu.core.limits import LimitMode
 
 
 class TofuModel(BaseModel):
@@ -29,6 +32,116 @@ class BackendConfig(TofuModel):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
+#: Sentinel section meaning "every section the provider can prune".
+ALL_SECTIONS = "all"
+
+#: Output names become HCL identifiers, so they follow the same grammar.
+_OUTPUT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+
+#: Stack names become directory names and state prefixes.
+_STACK_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def validate_stack_name(value: str) -> str:
+    """Return ``value`` if it is safe as a workdir component and state prefix."""
+
+    if not _STACK_NAME.match(value):
+        raise ValueError(
+            f"stack name {value!r} must start alphanumeric and contain only "
+            "letters, digits, dots, dashes and underscores"
+        )
+    return value
+
+
+class Output(TofuModel):
+    """A value OpenTofu exposes after apply: ``output "name" { value = ... }``.
+
+    ``value`` is rendered like any other attribute, so plain Python values
+    become literals and :func:`python_tofu.hcl.ref` carries a resource
+    reference. Outputs render after every resource, so results such as a
+    service URL or bucket name can be read back with ``python-tofu output``.
+    """
+
+    name: str
+    value: Any
+    description: str | None = None
+    sensitive: bool = False
+
+    def __init__(
+        self,
+        name: str,
+        value: Any,
+        description: str | None = None,
+        sensitive: bool = False,
+        **data: Any,
+    ) -> None:
+        # Accept the documented positional form as well as keywords; Pydantic
+        # models are keyword-only by default.
+        fields: dict[str, Any] = {
+            "name": name,
+            "value": value,
+            "description": description,
+            "sensitive": sensitive,
+        }
+        fields.update(data)
+        super().__init__(**fields)
+
+    @field_validator("name")
+    @classmethod
+    def _name_is_an_hcl_identifier(cls, value: str) -> str:
+        if not _OUTPUT_NAME.match(value):
+            raise ValueError(
+                f"output name {value!r} is not an HCL identifier "
+                "(letters, digits, underscores and dashes; cannot start with a digit)"
+            )
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def _description_is_single_line(cls, value: str | None) -> str | None:
+        if value is not None and ("\n" in value or "\r" in value):
+            raise ValueError("output description must be a single line")
+        return value
+
+
+class PruneConfig(TofuModel):
+    """Opt-in deletion of live resources the stack does not declare.
+
+    Off by default. Set ``enabled=True`` to make the selected sections
+    authoritative; ``sections=("all",)`` covers every section the provider
+    supports. Providers validate section names against their own list.
+    """
+
+    enabled: bool = False
+    sections: tuple[str, ...] = (ALL_SECTIONS,)
+
+    @field_validator("sections")
+    @classmethod
+    def _sections_are_known_shape(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value:
+            raise ValueError("prune sections must not be empty")
+        if ALL_SECTIONS in value and len(value) > 1:
+            raise ValueError(f"prune section {ALL_SECTIONS!r} cannot be combined with others")
+        duplicates = sorted({item for item in value if value.count(item) > 1})
+        if duplicates:
+            raise ValueError("duplicate prune sections: " + ", ".join(duplicates))
+        return value
+
+    def resolve(self, supported: tuple[str, ...]) -> tuple[str, ...]:
+        """Return the concrete section names selected by this config."""
+
+        wanted = supported if ALL_SECTIONS in self.sections else self.sections
+        unknown = sorted(set(wanted) - set(supported))
+        if unknown:
+            raise ValueError(
+                "unsupported prune section(s): "
+                + ", ".join(unknown)
+                + ". Supported: "
+                + ", ".join(supported)
+            )
+        return tuple(item for item in supported if item in wanted)
+
+
 class BaseStack(TofuModel):
     """Minimal stack envelope shared by every provider.
 
@@ -39,3 +152,49 @@ class BaseStack(TofuModel):
 
     required_version: str = ">= 1.6.0"
     backend: Any = None
+    name: str | None = Field(
+        default=None,
+        description=(
+            "Stack name used for the default state prefix and workdir "
+            "(`.tofu/<name>`). Defaults to the config file stem; the CLI's "
+            "`--stack-name` overrides it."
+        ),
+    )
+    outputs: list[Output] = Field(
+        default_factory=list,
+        description=(
+            "Values exposed after apply (`output` blocks). Use "
+            '`python_tofu.ref("resource.type.name.attr")` for references.'
+        ),
+    )
+    prune: PruneConfig = Field(default_factory=PruneConfig)
+    limits_mode: LimitMode | None = Field(
+        default=None,
+        description=(
+            "Stack-level limit enforcement, used when neither `--limits` nor the "
+            "provider policy chooses one. Profiles such as `preview` set `warn`."
+        ),
+    )
+    extra_files: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Extra ``.tf``/``.tf.json`` files written verbatim into the workdir. "
+            "An escape hatch for provider resources the DSL does not model yet; "
+            "managed files (versions.tf, providers.tf, main.tf, .gitignore) win."
+        ),
+    )
+
+    @field_validator("name")
+    @classmethod
+    def _name_is_path_safe(cls, value: str | None) -> str | None:
+        if value is not None:
+            validate_stack_name(value)
+        return value
+
+    @model_validator(mode="after")
+    def _output_names_are_unique(self) -> "BaseStack":
+        names = [item.name for item in self.outputs]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError("duplicate output names: " + ", ".join(duplicates))
+        return self

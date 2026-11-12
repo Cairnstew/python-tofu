@@ -4,7 +4,7 @@ Every other part imports ``PROJECT`` from here, so there is exactly one place to
 rename the project or change region/labels.
 """
 
-from python_tofu import GcpProject, GcpProvider, ProjectApi
+from python_tofu import GcpProject, GcpProvider, ProjectApi, StackPart
 
 PROJECT = "acme-platform"
 REGION = "europe-west1"
@@ -34,3 +34,5 @@ apis = [
         "bigquery.googleapis.com",
     )
 ]
+
+part = StackPart(name="foundation", projects=projects, apis=apis)

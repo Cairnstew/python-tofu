@@ -8,8 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from python_tofu.exceptions import TofuNotInstalledError
-from python_tofu.models.results import CommandResult
+from python_tofu.core.exceptions import TofuNotInstalledError
+from python_tofu.core.results import CommandResult
 
 
 class TofuRunner:
@@ -117,7 +117,7 @@ class TofuRunner:
 
         result = self.run("show", "-json", str(plan_file))
         if not result.ok:
-            from python_tofu.exceptions import TofuCommandError
+            from python_tofu.core.exceptions import TofuCommandError
 
             raise TofuCommandError(result.command, result.returncode, result.stdout, result.stderr)
         parsed: dict[str, Any] = json.loads(result.stdout or "{}")

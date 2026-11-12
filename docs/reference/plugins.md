@@ -28,7 +28,7 @@ def create_app(provider):
     ...
 ```
 
-`order` controls display order (built-ins use 0–8; plugins default to 100).
+`order` controls display order (built-ins use 0–10; plugins default to 100).
 
 ## Out-of-tree packages
 
@@ -49,7 +49,13 @@ returning one):
 
 ```python
 # acme_tofu/__init__.py
+from python_tofu.core.doctor import CheckResult, CheckStatus
 from python_tofu.core.provider import Provider, register_provider
+
+
+def check_credentials(stack, workdir):
+    return [CheckResult("credentials", CheckStatus.OK, "token minted")]
+
 
 PROVIDER = register_provider(
     Provider(
@@ -57,6 +63,7 @@ PROVIDER = register_provider(
         display_name="Acme Cloud",
         stack_type=AcmeStack,
         renderer_type=AcmeRenderer,
+        doctor_checks=check_credentials,  # powers `python-tofu doctor`
     )
 )
 ```
@@ -106,7 +113,8 @@ SPECS = [
 ```bash
 python-tofu plugins
 # Active provider: GCP (gcp)
-# Commands:     render, init, validate, plan, apply, destroy, output, limits, plugins
+# Commands:     render, init, validate, doctor, plan, apply, destroy, prune,
+#               output, limits, apis, plugins
 # Providers:    gcp
 # Plugins:      none discovered
 ```

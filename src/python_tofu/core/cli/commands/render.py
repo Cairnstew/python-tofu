@@ -12,6 +12,7 @@ from python_tofu.core.cli.options import (
     ConfigOption,
     FailOnUnknownOption,
     LimitModeOption,
+    StackNameOption,
     UsageModeOption,
     VerboseOption,
     WorkdirOption,
@@ -26,12 +27,13 @@ def create_app(provider: Provider) -> typer.Typer:
     @app.callback(invoke_without_command=True)
     def render(
         config: ConfigOption = Path("infra.py"),
-        workdir: WorkdirOption = Path(".tofu"),
+        workdir: WorkdirOption = None,
         binary: BinaryOption = "tofu",
         verbose: VerboseOption = False,
         limits: LimitModeOption = None,
         usage: UsageModeOption = None,
         fail_on_unknown: FailOnUnknownOption = False,
+        stack_name: StackNameOption = None,
     ) -> None:
         command = BaseCommand(
             make_context(
@@ -43,6 +45,7 @@ def create_app(provider: Provider) -> typer.Typer:
                 limits,
                 usage,
                 fail_on_unknown,
+                stack_name=stack_name,
             )
         )
         _, result = command.prepare()

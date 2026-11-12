@@ -9,11 +9,14 @@ loader only depend on this contract, so GCP quirks can live in
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from pathlib import Path
+from typing import Any, Callable, Sequence
 
+from python_tofu.core.doctor import CheckResult
 from python_tofu.core.exceptions import TofuError
 from python_tofu.core.limits import LimitPolicy, Throttler, Usage
 from python_tofu.core.models import BaseStack
+from python_tofu.core.prune import PrunePlan
 from python_tofu.core.renderer import BaseRenderer
 
 
@@ -29,6 +32,9 @@ class Provider:
     limit_policy: LimitPolicy | None = None
     measure_usage: Callable[[Any], Usage] | None = None
     live_measure_usage: Callable[[Any], Usage] | None = None
+    prune_sections: tuple[str, ...] = ()
+    prune_plan: Callable[[Any, tuple[str, ...]], PrunePlan] | None = None
+    doctor_checks: Callable[[Any, Path], Sequence[CheckResult]] | None = None
 
     @property
     def label(self) -> str:
@@ -37,6 +43,36 @@ class Provider:
     @property
     def has_live_measurement(self) -> bool:
         return self.live_measure_usage is not None
+
+    @property
+    def can_prune(self) -> bool:
+        return bool(self.prune_sections) and self.prune_plan is not None
+
+    @property
+    def has_doctor(self) -> bool:
+        return self.doctor_checks is not None
+
+    def run_doctor(self, stack: BaseStack, workdir: Path) -> tuple[CheckResult, ...]:
+        """Run the provider's read-only preflight checks."""
+
+        if self.doctor_checks is None:
+            return ()
+        return tuple(self.doctor_checks(stack, workdir))
+
+    def plan_prune(self, stack: BaseStack, sections: tuple[str, ...]) -> PrunePlan:
+        """Discover live resources in ``sections`` that ``stack`` does not declare."""
+
+        if self.prune_plan is None:
+            raise TofuError(f"provider {self.name!r} does not support pruning")
+        unknown = sorted(set(sections) - set(self.prune_sections))
+        if unknown:
+            raise TofuError(
+                "unsupported prune section(s): "
+                + ", ".join(unknown)
+                + ". Supported: "
+                + ", ".join(self.prune_sections)
+            )
+        return self.prune_plan(stack, tuple(sections))
 
     def usage(self, stack: BaseStack, live: bool = False) -> Usage:
         """Measure ``stack``; ``live`` adds (and prefers) existing infrastructure."""

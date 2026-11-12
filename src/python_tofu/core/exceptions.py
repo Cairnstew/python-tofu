@@ -15,6 +15,10 @@ class RenderError(TofuError):
     """The stack could not be rendered to valid OpenTofu configuration."""
 
 
+class PruneError(TofuError):
+    """A prune plan could not be adopted or destroyed."""
+
+
 class TofuNotInstalledError(TofuError):
     """The ``tofu`` binary could not be found."""
 

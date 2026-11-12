@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import typer
+
 from python_tofu.core.limits import LimitMode, UsageMode
 from python_tofu.core.loader import load_stack
-from python_tofu.core.models import BaseStack
+from python_tofu.core.models import BaseStack, validate_stack_name
 from python_tofu.core.provider import Provider
 from python_tofu.core.renderer import BaseRenderer
 from python_tofu.core.runner import TofuRunner
@@ -24,12 +26,42 @@ class AppContext:
     limit_mode: LimitMode | None = None
     usage_mode: UsageMode = UsageMode.STACK
     fail_on_unknown: bool = False
+    stack_name: str | None = None
+    #: True when ``--workdir`` was omitted, so the directory may be re-derived
+    #: from the stack's own ``name`` once the config has loaded.
+    workdir_is_default: bool = False
 
     def load_stack(self) -> BaseStack:
-        return load_stack(self.config_path, self.provider.stack_type)
+        stack = load_stack(self.config_path, self.provider.stack_type)
+        name = self.stack_name or stack.name or self.config_path.stem
+        if stack.name != name:
+            stack = stack.model_copy(update={"name": name})
+        if self.workdir_is_default:
+            self.workdir = Path(".tofu") / name
+        return stack
+
+    def derive_workdir(self) -> Path:
+        """Resolve the workdir when the stack is not loaded (e.g. ``output``)."""
+
+        if self.workdir_is_default:
+            name = self.stack_name or self.config_path.stem
+            return Path(".tofu") / name
+        return self.workdir
 
     def renderer(self) -> BaseRenderer[Any]:
         return self.provider.renderer_type(self.workdir)
 
     def runner(self) -> TofuRunner:
         return TofuRunner(self.workdir, binary=self.binary)
+
+
+def check_stack_name(value: str | None) -> str | None:
+    """Reject names that would escape the workdir or break a state prefix."""
+
+    if value is None:
+        return None
+    try:
+        validate_stack_name(value)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    return value

@@ -39,10 +39,13 @@ derivations via pure Nix code and the repo builds with `nix build .#default`.
 | `src/python_tofu/core/` | Provider-agnostic engine: HCL, loader, runner, renderer base, CLI factory |
 | `src/python_tofu/core/provider.py` | `Provider` plugin contract and registry |
 | `src/python_tofu/core/limits.py` | `Limit`/`LimitPolicy`/`Usage`/`Throttler`, reports |
-| `src/python_tofu/providers/gcp/` | GCP branch: models, `GcpStack`, quirks, renderer, limits, live inventory, plugin |
+| `src/python_tofu/core/prune.py` | `PrunableResource`/`PrunePlan` + scratch-module `Reaper` |
+| `src/python_tofu/providers/gcp/` | GCP branch: models, `GcpStack`, quirks, renderer, limits, live inventory, parts, plugin |
 | `src/python_tofu/providers/gcp/renderer.py` | GCP stack → files in a workdir |
 | `src/python_tofu/providers/gcp/limits.py` | GCP free-tier policy + usage measurement |
 | `src/python_tofu/providers/gcp/live.py` | Cloud Asset Inventory live measurement |
+| `src/python_tofu/providers/gcp/prune.py` | Live discovery of undeclared resources |
+| `src/python_tofu/providers/gcp/services.py` | Service Usage catalog + API name resolution |
 | `src/python_tofu/models/`, `services/`, `hcl.py`, `loader.py` | Backwards-compatible re-export shims |
 | `src/python_tofu/cli/main.py` | Default GCP Typer app (`build_app(GCP, ...)`) |
 | `examples/gcp_bootstrap/` | End-to-end project/service-account/bucket example |
@@ -91,7 +94,9 @@ pytest -q         # all tests (unit, integration, nix eval)
    `composeManyExtensions` in `flake.nix`. See `UV2NIX.md`.
 7. **Adding a GCP resource** — add a frozen Pydantic model in
    `providers/gcp/models.py`, a renderer function in
-   `providers/gcp/renderer.py`, and tests. Update the DSL reference.
+   `providers/gcp/renderer.py`, its API dependencies in
+   `providers/gcp/apis.py` (drive `required_apis`/`depends_on`), and tests.
+   Update the DSL reference.
 8. **Keep core provider-blind** — provider-specific rules (identifiers, backend
    kinds, resource naming) belong in `providers/<name>/`; core only knows the
    `Provider` contract.

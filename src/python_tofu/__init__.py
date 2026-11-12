@@ -16,13 +16,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from python_tofu.core.doctor import CheckResult, CheckStatus, DoctorReport
 from python_tofu.core.exceptions import (
     ConfigError,
+    PruneError,
     RenderError,
     TofuCommandError,
     TofuError,
     TofuNotInstalledError,
 )
+from python_tofu.core.hcl import ref
 from python_tofu.core.limits import (
     AggregateLimit,
     Limit,
@@ -40,25 +43,54 @@ from python_tofu.core.limits import (
     UsageMode,
 )
 from python_tofu.core.loader import load_stack as _load_stack
-from python_tofu.core.models import BaseStack, TofuModel
+from python_tofu.core.models import BaseStack, Output, PruneConfig, TofuModel
 from python_tofu.core.provider import Provider, available_providers, get_provider
+from python_tofu.core.prune import PrunableResource, PrunePlan
 from python_tofu.core.renderer import BaseRenderer
 from python_tofu.core.results import CommandResult, PlanSummary, RenderResult
 from python_tofu.core.runner import TofuRunner
 from python_tofu.providers.gcp import (
     GCP,
+    ArtifactRegistryRepository,
     BackendConfig,
+    BillingBudget,
     BucketObject,
+    CloudRunFunction,
+    CloudRunJob,
+    CloudRunService,
+    CloudRunWorkerPool,
+    CloudSqlVolume,
+    DeadLetter,
+    EmptyDirVolume,
     GcpBackendConfig,
     GcpProject,
     GcpProvider,
     GcpRenderer,
     GcpStack,
+    GcsVolume,
+    GrpcProbe,
+    HttpProbe,
+    NfsVolume,
+    Probe,
     ProjectApi,
     ProjectIamMember,
+    PubSubSubscription,
+    PubSubTopic,
+    RetryPolicy,
+    SecretEnv,
+    SecretVolume,
+    SecretVolumeItem,
+    Service,
     ServiceAccount,
+    ServiceCatalog,
+    StackPart,
+    StackProfile,
     StorageBucket,
     StorageClass,
+    TcpProbe,
+    Volume,
+    compose,
+    enable_apis,
 )
 
 __version__ = "0.1.0"
@@ -75,12 +107,21 @@ def load_stack(path: str | Path) -> GcpStack:
 
 __all__ = [
     "AggregateLimit",
+    "ArtifactRegistryRepository",
     "BackendConfig",
     "BaseRenderer",
     "BaseStack",
+    "BillingBudget",
     "BucketObject",
+    "CloudRunFunction",
+    "CloudRunJob",
+    "CloudRunService",
+    "CloudRunWorkerPool",
     "CommandResult",
     "ConfigError",
+    "CheckResult",
+    "CheckStatus",
+    "DoctorReport",
     "GCP",
     "GcpBackendConfig",
     "GcpProject",
@@ -98,13 +139,38 @@ __all__ = [
     "LimitStatus",
     "LimitUnknown",
     "PlanSummary",
+    "DeadLetter",
+    "Output",
+    "PubSubSubscription",
+    "PubSubTopic",
+    "RetryPolicy",
     "ProjectApi",
     "ProjectIamMember",
     "Provider",
+    "PrunableResource",
+    "PruneConfig",
+    "PruneError",
+    "PrunePlan",
     "RenderError",
     "RenderResult",
     "Renderer",
+    "SecretEnv",
+    "Service",
+    "GcsVolume",
+    "NfsVolume",
+    "EmptyDirVolume",
+    "CloudSqlVolume",
+    "SecretVolume",
+    "SecretVolumeItem",
+    "Volume",
+    "Probe",
+    "HttpProbe",
+    "TcpProbe",
+    "GrpcProbe",
     "ServiceAccount",
+    "ServiceCatalog",
+    "StackPart",
+    "StackProfile",
     "StorageBucket",
     "StorageClass",
     "TofuCommandError",
@@ -117,6 +183,9 @@ __all__ = [
     "UsageMode",
     "__version__",
     "available_providers",
+    "compose",
+    "enable_apis",
     "get_provider",
     "load_stack",
+    "ref",
 ]

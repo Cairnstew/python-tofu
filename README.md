@@ -68,7 +68,7 @@ stack = GcpStack(
 Then:
 
 ```bash
-python-tofu plan --config infra.py --workdir .tofu
+python-tofu plan --config infra.py        # state + HCL in .tofu/infra
 ```
 
 ### Bucket contents
@@ -94,7 +94,72 @@ stack = GcpStack(
 
 OpenTofu only re-uploads an object when its content or source file changes.
 `StorageBucket(versioning=True)` keeps previous generations. See the
-[DSL reference](docs/reference/dsl.md#bucketobject).
+[DSL reference](docs/reference/dsl.md#bucketobject). Resources the DSL does not
+model can be added as raw `.tf` files through `GcpStack.extra_files` — see the
+[BigLake example](examples/gcp_biglake/) and the
+[Cloud Run example](examples/gcp_cloud_run/) (prebuilt image vs. function
+source zip).
+
+### Enabling APIs
+
+Declare APIs by short name and validate them against the project's Service
+Usage catalog:
+
+```python
+from python_tofu import GcpProvider, GcpStack
+from python_tofu.providers.gcp.services import ServiceCatalog
+
+PROJECT = "my-project"
+provider = GcpProvider(project=PROJECT)
+catalog = ServiceCatalog(PROJECT, credentials=provider.credentials)
+
+stack = GcpStack(
+    provider=provider,
+    apis=catalog.enable("compute", "run", "storage", "iam"),
+)
+```
+
+`catalog.enable(...)` resolves each name with `services.get` (no rate-limited
+listing), deduplicates, and fails with suggestions on a typo. Inspect the live
+catalog with `python-tofu apis --project my-project --state available --filter
+compute`. See [`examples/gcp_apis/`](examples/gcp_apis/) for the full pattern.
+
+### Cloud Run
+
+Both Cloud Run deployment paths are typed, with hardened defaults (internal
+ingress, private invoker, deletion protection, capped scaling):
+
+```python
+from python_tofu import CloudRunFunction, CloudRunService
+
+services = [
+    CloudRunService(
+        project="my-project",
+        name="api",
+        image="us-docker.pkg.dev/my-project/repo/api@sha256:...",
+        service_account="api-runtime",
+    )
+]
+functions = [
+    CloudRunFunction(
+        project="my-project",
+        name="hello",
+        runtime="python312",
+        entry_point="hello_http",
+        source_bucket="functions-src",   # declared bucket
+        source_object="hello.zip",       # uploaded via BucketObject
+    )
+]
+```
+
+Cloud Run services take an image reference; build and push in CI. 2nd-gen
+functions take a source zip, which `BucketObject` uploads (see
+[the example](examples/gcp_cloud_run/)). Set
+`allow_unauthenticated=True, ingress="all"` explicitly to expose a service.
+`CloudRunJob` covers batch runners, `CloudRunWorkerPool` covers pull-based
+background workers, `PubSubTopic`/`PubSubSubscription` wire queues and push
+targets, and `ArtifactRegistryRepository` hosts the custom images. The APIs
+those resources need are enabled and ordered automatically.
 
 ## CLI
 
@@ -103,16 +168,19 @@ OpenTofu only re-uploads an object when its content or source file changes.
 | `render` | Write `versions.tf`, `providers.tf`, `main.tf` and `.gitignore` |
 | `init` | Render, then `tofu init` |
 | `validate` | Render, init and `tofu validate` |
+| `doctor` | Read-only preflight: credentials, project, billing, APIs, backend |
 | `plan` | Render, init, `tofu plan`, print a JSON-friendly summary |
 | `apply` | Render, init and apply (or apply a saved plan) |
 | `destroy` | Render, init and destroy |
+| `prune` | Delete live resources the stack does not declare (dry run by default) |
 | `output` | Read `tofu output -json` |
 | `limits` | Show provider limits and measured usage |
+| `apis` | List/resolve Google APIs via Service Usage |
 | `plugins` | Show commands, providers and discovered plugins |
 
-Every command that loads a stack accepts `--config/-c`, `--workdir/-w`,
-`--binary` and `--verbose/-v`; `output` reads an existing workdir and takes only
-`--workdir`, `--binary` and `--verbose`. Run `python-tofu --version` to print the
+Every command that loads a stack accepts `--config/-c`, `--stack-name`,
+`--workdir/-w`, `--binary` and `--verbose/-v`; `output` reads an existing
+workdir and derives the same default directory from `--config`/`--stack-name`. Run `python-tofu --version` to print the
 installed version. See the [CLI reference](docs/reference/cli.md).
 
 ## Free-tier guardrails
@@ -135,6 +203,38 @@ so manually created and pre-existing resources count too. Unmeasured limits are
 reported as `unknown` (never as zero); `--fail-on-unknown` makes them fatal.
 Per-area limits and a normalised `gcp.free_tier.total` aggregate are supported.
 See the [limits reference](docs/reference/limits.md).
+
+## Pruning undeclared infrastructure
+
+Pruning is **off by default**. Enable it per stack to make selected sections
+authoritative — anything that exists in the cloud but is not declared is deleted:
+
+```python
+from python_tofu import GcpStack, PruneConfig
+
+stack = GcpStack(
+    ...,
+    prune=PruneConfig(enabled=True, sections=("buckets", "subscriptions", "topics",
+                                       "service_accounts", "apis")),
+)
+```
+
+Then preview and run:
+
+```bash
+python-tofu prune --config infra.py            # dry run: list what would be deleted
+python-tofu prune --config infra.py --apply    # delete it
+python-tofu apply --config infra.py --prune    # apply, then prune leftovers
+```
+
+`prune` discovers live resources with the service read APIs (Storage, IAM,
+Service Usage) and deletes them
+through a throw-away OpenTofu root module, so deletes use the provider's own
+logic and never touch the stack's state backend. Supported sections are
+`buckets`, `subscriptions`, `topics`, `service_accounts` and `apis`; bucket deletion force-destroys
+objects. Google-managed service accounts and essential APIs are never pruned.
+Bucket objects cannot be imported by the provider, and project IAM bindings are
+excluded because an authoritative IAM sweep can remove human access.
 
 ## Providers
 

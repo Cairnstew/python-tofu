@@ -9,24 +9,30 @@ python-tofu --version
 
 ## Shared options
 
-Every command that loads a stack (`render`, `init`, `validate`, `plan`, `apply`,
-`destroy`) accepts:
+Every command that loads a stack (`render`, `init`, `validate`, `doctor`, `plan`,
+`apply`, `destroy`, `prune`, `limits`) accepts:
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--config`, `-c` | `infra.py` | Python module exposing a module-level `stack` |
-| `--workdir`, `-w` | `.tofu` | Directory where HCL and state are written |
+| `--workdir`, `-w` | `.tofu/<stack-name>` | Directory where HCL and state are written |
+| `--stack-name` | config file stem, or the stack's `name` | State name; drives the default workdir and GCS prefix |
 | `--binary` | `tofu` | OpenTofu binary to invoke |
 | `--verbose`, `-v` | false | Print every `tofu` command before running it |
 | `--limits` | policy default (`error` for GCP) | Enforce limits: `error`, `warn` or `off` |
 | `--usage` | `stack` | `stack` uses declared resources; `live` also reads existing infrastructure |
 | `--fail-on-unknown` | false | Fail when a limit could not be measured (ignored with `--limits off`) |
 
-`output` reads an existing workdir and accepts only `--workdir`, `--binary`,
-`--verbose` and `--json/--no-json` (there is no `--config`, because it does not
-render).
+`output` reads an existing workdir and accepts `--config`, `--stack-name`,
+`--workdir`, `--binary`, `--verbose` and `--json/--no-json`. It never renders:
+`--config` only names the default directory (`.tofu/<stem>`), so pass the same
+`--config`/`--stack-name` you used for `apply` when the stack sets its own
+`name`.
 
-`--workdir` is resolved against the current directory. `--plan-file` and
+When `--workdir` is omitted the directory is `.tofu/<stack-name>`, where the
+name is `--stack-name`, else the stack's `name`, else the config file stem.
+An explicit `--workdir` is used exactly as given. `--workdir` is resolved
+against the current directory. `--plan-file` and
 `--var-file` are also resolved against the current directory before `tofu` runs
 from inside the workdir, so relative paths mean what the shell says.
 
@@ -53,6 +59,40 @@ Render, then run `tofu init -input=false`.
 
 Render, run `tofu init`, then `tofu validate -no-color`.
 
+### `doctor`
+
+Read-only preflight. Loads the config, mints a token and checks, in order:
+
+1. credentials resolve and can mint an access token
+2. the provider project exists and is `ACTIVE`
+3. billing is enabled
+4. every API the stack declares or derives is enabled
+5. the state backend is reachable (a GCS bucket read, or a local directory that
+   exists or can be created)
+6. no GCS state lock object is present
+7. the limits summary (same measurement `plan` uses)
+
+```bash
+python-tofu doctor --config infra.py
+# ✓ credentials  ci-runner@demo-project.iam.gserviceaccount.com (expires in 59m)
+# ✓ project      demo-project (ACTIVE)
+# ✓ billing      enabled (0123AB-456CDE-789FGH)
+# ✓ APIs         4 required, all ENABLED
+# ✓ backend      gs://demo-state prefix python-tofu/infra
+# ✓ state lock   none
+# ? limits       54 limits checked; 0 exceeded, 0 warning, 53 unknown
+```
+
+Each failure prints a `fix:` line, and the command exits `1` if anything
+failed. Nothing is rendered, enabled or deleted.
+
+| Option | Description |
+|--------|-------------|
+| `--usage live` | Also measure existing infrastructure for the limits section |
+| `--fail-on-unknown` | Exit `1` when a check (or a limit) could not be verified |
+| `--limits off` | Skip the limits section |
+| `--json` | Emit the checklist as JSON |
+
 ### `plan`
 
 Render, run `tofu init` (unless `--no-init`), save `plan.tfplan`, and print a
@@ -64,11 +104,24 @@ summary derived from `tofu show -json`.
 | `--no-init` | Skip `tofu init` |
 | `--var-file PATH` | Pass an extra tfvars file |
 | `--json` | Print the summary as JSON |
+| `--exit-code` | Exit `2` when the plan has changes, `0` when empty, `1` on error |
+| `--prune` | Also list live resources the stack does not declare (preview only) |
+| `--prune-section NAME` | Limit the preview to `buckets`, `subscriptions`, `topics`, `service_accounts` or `apis` (repeatable) |
 
 ```bash
 python-tofu plan -c infra.py -w .tofu --json
 # {"create": 8, "update": 0, "delete": 0, "replace": 0, "no_op": 0, "other": 0, "has_changes": true}
 ```
+
+`--exit-code` turns the summary into a gate, mirroring `tofu plan
+-detailed-exitcode` without exposing the raw flag:
+
+```bash
+python-tofu plan -c infra.py --exit-code    # exit 2 when there is anything to do
+```
+
+Exit `2` also means "error" to CI systems that only look at non-zero; check for
+the exact code when you need to distinguish "changes" from "broken".
 
 ### `apply`
 
@@ -76,9 +129,11 @@ Render, run `tofu init`, then `tofu apply`.
 
 | Option | Description |
 |--------|-------------|
-| `--auto-approve` | Skip interactive approval |
+| `--auto-approve` | Skip interactive approval (and the prune confirmation) |
 | `--plan-file PATH` | Apply a previously saved plan instead of re-rendering |
 | `--var-file PATH` | Pass an extra tfvars file |
+| `--prune` | After applying, delete live resources the stack does not declare |
+| `--prune-section NAME` | Prune only `buckets`, `subscriptions`, `topics`, `service_accounts` or `apis` (repeatable, implies `--prune`) |
 
 ### `destroy`
 
@@ -89,10 +144,41 @@ Render, run `tofu init`, then `tofu destroy`.
 | `--auto-approve` | Skip interactive approval |
 | `--var-file PATH` | Pass an extra tfvars file |
 
+### `prune`
+
+Delete live resources that the stack does not declare. Discovery uses the
+service read APIs (Storage, IAM, Service Usage); deletion adopts each resource
+into a scratch OpenTofu module
+and runs `tofu destroy`, so it uses the provider's delete logic and leaves the
+real state backend alone.
+
+Pruning is a **dry run by default**. It only acts when the stack has
+`prune=PruneConfig(enabled=True)` or a section is selected explicitly.
+
+```bash
+python-tofu prune --config infra.py                      # list leftovers
+python-tofu prune --config infra.py --apply              # delete them
+python-tofu prune --config infra.py --section buckets    # one section
+python-tofu prune --config infra.py --section subscriptions --section topics
+python-tofu prune --config infra.py --all --apply        # every supported section
+python-tofu apply --config infra.py --prune --auto-approve  # apply, then prune
+```
+
+| Option | Description |
+|--------|-------------|
+| `--section NAME` | Prune one section (repeatable): `buckets`, `subscriptions`, `topics`, `service_accounts`, `apis` |
+| `--all` | Select every supported section |
+| `--apply` | Actually delete; without it the command only lists |
+| `--auto-approve` | Skip the deletion confirmation |
+
+`plan --prune` only previews. `apply --prune` prunes after a successful apply
+and cannot be combined with `--plan-file`; `plan --prune` cannot be combined
+with `--destroy`.
+
 ### `output`
 
-Run `tofu output -json` (or `--no-json` for plain output). Requires an existing
-working directory.
+Run `tofu output -json` (or `--no-json` for plain output). Reads the values
+declared through `GcpStack.outputs`. Requires an existing working directory.
 
 | Option | Description |
 |--------|-------------|
@@ -121,6 +207,33 @@ python-tofu limits --config infra.py --all
 [limits reference](limits.md#unknown-is-not-zero). `--usage live` uses Cloud
 Asset Inventory to include manually created and pre-existing resources.
 
+### `apis`
+
+List available, enabled or all Google APIs for a project, or resolve a short
+name, through the Service Usage API. No `tofu` process runs.
+
+```bash
+python-tofu apis --project my-project --state enabled --filter storage
+python-tofu apis --project my-project --state available --filter compute
+python-tofu apis --project my-project --state all --json
+python-tofu apis --project my-project --resolve run
+python-tofu apis --config infra.py --state enabled
+```
+
+| Option | Description |
+|--------|-------------|
+| `--project PROJECT` | Inspect this project; skips loading `--config` |
+| `--state available\|enabled\|all` | Restrict by state (default `available`) |
+| `--filter TEXT` | Case-insensitive substring match on name or title |
+| `--resolve NAME` | Resolve a short/full name with `services.get` and print it |
+| `--quota-project PROJECT` | Send `x-goog-user-project` for user (ADC) credentials |
+| `--json` | Emit JSON |
+
+Service Usage rate-limits the available/disabled listing (often one request per
+minute). `--state enabled` and `--resolve` do not use it; when the quota is
+exhausted the command prints a hint. See
+[`examples/gcp_apis/`](../../examples/gcp_apis/) for config usage.
+
 ### `plugins`
 
 List the active provider, every registered command and any plugins discovered
@@ -135,7 +248,8 @@ See the [commands and plugins reference](plugins.md).
 ## Exit codes
 
 Commands exit with OpenTofu's exit code. Configuration and rendering errors exit
-with `1` and print a red `Error:` line to stderr.
+with `1` and print a red `Error:` line to stderr. `plan --exit-code` adds
+`2` for "the plan has changes".
 
 ## Environment
 

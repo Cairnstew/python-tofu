@@ -110,6 +110,73 @@ start the object in parallel, which was observed live as
 An `AggregateLimit` adds `used / amount` ratios, not raw GB or requests. Two
 limits at 60% each produce `1.2`, which exceeds the default `amount=1.0`.
 
+## Service Usage
+
+### Listing available APIs is quota-capped
+`services.list` with `state:DISABLED` (what `gcloud services list --available`
+uses) is limited to roughly one request per minute per project. A second call
+inside that window returns `429` for the "List available/disabled services
+requests" metric. `state:ENABLED` and `services.get` are not affected. The
+catalog reports a 429 with a hint; do not retry in a tight loop, and do not
+assume pagination is free — a second page can hit the same quota.
+
+### Resolve names with services.get, not the listing
+`ServiceCatalog.resolve`/`enable` call `GET /v1/projects/{p}/services/{name}`
+first. That endpoint returns both enabled and disabled services and costs no
+listing quota, so `enable("run")` works even when `available()` is throttled.
+Only partial/fuzzy names and `available()`/`all()` fall back to the listing.
+
+### User credentials need x-goog-user-project
+With ADC (a human account) Service Usage can reject a project-scoped call
+without `x-goog-user-project`. Pass `--quota-project` on `python-tofu apis`, or
+`ServiceCatalog(..., quota_project=...)`. Service-account keys normally do not
+need it.
+
+### `services.get` returns 404 for unknown APIs
+`get_service` treats HTTP 404 as "not found" and returns `None`; other statuses
+(403, 429, 5xx) propagate as `GoogleApiError`. Do not turn 403 into "unknown" —
+that hides a permissions problem.
+
+## Pruning
+
+### Pruning is opt-in and irreversible
+`PruneConfig` defaults to `enabled=False`. When enabled, anything the stack does
+not declare is deleted. Buckets are adopted with `force_destroy=True`, so
+pruning a bucket deletes every object in it. Do not enable a section you cannot
+recreate.
+
+### Only importable resource types can be pruned
+Deletion runs through `tofu import` + `tofu destroy` in a scratch module. The
+Google provider cannot import `google_storage_bucket_object`, so bucket objects
+are not prunable. Project IAM bindings are deliberately excluded too: an
+authoritative IAM sweep can remove human access. Do not add a section unless the
+provider supports import for that type.
+
+### Pruning never touches the real state backend
+`Reaper` writes a local-only module under `<workdir>/.python-tofu-prune/` and
+never renders the stack's `backend` block. On success the directory is removed;
+on failure it is kept for inspection. Never point that scratch module at the GCS
+backend — a destroy there would delete managed state.
+
+### Google-managed resources are skipped by name
+`providers/gcp/prune.py` skips default service accounts (`*-compute`,
+appspot, `service-N`) and a protected API list (Cloud Asset Inventory, IAM,
+Cloud Resource Manager, Service Usage, Storage, logging, monitoring, billing
+budgets). Pruning those breaks the project or the wrapper mid-run.
+
+### Discovery uses service APIs, not Cloud Asset Inventory
+Buckets, service accounts and enabled APIs are listed with the Storage, IAM and
+Service Usage APIs respectively, scoped to `provider.project`. Do not switch
+this back to CAI: it is eventually consistent, so a bucket deleted moments ago
+can still be reported and the next prune then tries to import a 404 (observed
+live). Assets the service APIs do not report are still invisible to pruning, so
+a clean prune report is not proof that no stray infrastructure exists.
+
+### Preview is read-only, apply is not
+`plan --prune` and `python-tofu prune` (without `--apply`) only list resources.
+`apply --prune` prunes after a successful apply and is incompatible with
+`--plan-file`; `plan --prune` is incompatible with `--destroy`.
+
 ## Python / HCL
 
 ### Hatchling build backend
@@ -138,6 +205,143 @@ Only load trusted infrastructure modules.
 ### Cross-project references
 Every resource `project` must be declared, equal to `provider.project`, or listed
 in `external_projects`. This catches typos before `tofu` runs.
+
+### `extra_files` is raw HCL, not a typed model
+`extra_files` writes files verbatim and bypasses Pydantic validation. Keep names
+flat and ending in `.tf`/`.tf.json`; managed files cannot be overridden. Validate
+the rendered workdir with `tofu validate` before applying. `RenderResult.resources`
+does not count resources declared this way.
+
+### Raw HCL does not inherit typed dependencies
+Resources in `extra_files` cannot see the typed `google_project_service` blocks
+in `main.tf`. When a raw resource needs its API enabled first, add
+`depends_on = [google_project_service.api_<slug>]` (for example
+`api_biglake_googleapis_com`); otherwise OpenTofu may create the resource in
+parallel with API enablement and fail with a 403. The BigLake example does this.
+
+### Provider docs on `main` can be ahead of `~> 6.0`
+The `google` provider docs site tracks `main`. A field shown there may not exist
+in the pinned `~> 6.0` release (observed: `google_biglake_table`'s `serde_info`
+block is absent in 6.50.0 and `tofu validate` rejects it). Check the docs at the
+installed tag, or rely on `tofu validate`, before copying examples.
+
+## Cloud Run
+
+### `max_instance_count` lives in `template.scaling` on provider 6.x
+`google_cloud_run_v2_service` has a top-level `scaling` block, but in 6.50 it
+only accepts `min_instance_count`, `scaling_mode` and `manual_instance_count`.
+Put both min and max under `template { scaling { ... } }`; a top-level
+`max_instance_count` fails `tofu validate`.
+
+### Function secret env vars need `project_id`
+`service_config.secret_environment_variables` requires `project_id` in addition
+to `key`, `secret` and `version`. The renderer fills it from the function's
+project.
+
+### Deletion protection defaults to true
+`CloudRunService.deletion_protection=True` blocks `tofu destroy` until the
+service is updated with `deletion_protection=False`. That is intentional for a
+hardened default; do not flip the model default to make teardown convenient.
+
+### Source zip determinism drives rebuilds
+The function references the `BucketObject`'s `generation`. Zip with fixed
+timestamps (the example does) or the bytes change on every render and the
+function rebuilds each apply.
+
+### Public access is two switches
+Setting `ingress="all"` does not make a service callable; without
+`allow_unauthenticated=True` there is no `allUsers` invoker binding. Both are
+off by default.
+
+### First enable of an API is not instant
+Derived APIs are ordered before their consumers, but the backend can lag the
+enable call. A live test enabled `run.googleapis.com` and immediately created a
+Cloud Run job: the API call succeeded, yet the job never appeared within the
+provider's four-minute poll and the apply failed. Re-running the same apply
+created it in 14 seconds. Fast services (Artifact Registry, Pub/Sub topics)
+succeed in the same pass; slow ones may need one retry after a fresh enable.
+
+### Pub/Sub `ttl = ""` silently expires
+The provider's expand function drops empty durations before the API call, so
+`expiration_policy { ttl = "" }` becomes "no policy" and Pub/Sub applies its
+31-day default. The field is `Computed`, so state shows `2678400s` and the plan
+looks clean while the subscription is quietly expiring. Always emit an explicit
+TTL; `"315360000s"` approximates "never".
+
+### Pub/Sub filters are immutable
+`filter` is `ForceNew`: changing it destroys and recreates the subscription,
+dropping unacked messages. Pick the filter before creating the subscription.
+
+### Exactly-once is pull-only
+Pub/Sub rejects exactly-once delivery on push subscriptions. The DSL raises at
+import time rather than letting `tofu apply` fail.
+
+### Dead-letter topics need the service agent
+The Pub/Sub service agent (`service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com`)
+needs `roles/pubsub.publisher` on the dead-letter topic. Creation succeeds
+without it and failures only surface once a message exceeds
+`max_delivery_attempts`, so the renderer emits the grant from a
+`data "google_project"` lookup.
+
+### Pushing to a private Cloud Run service needs three moving parts
+1. `push_config.oidc_token.service_account_email` — the identity Pub/Sub signs as.
+2. `roles/run.invoker` for that identity on the service — set
+   `CloudRunService(invoker_service_accounts=[...])`.
+3. `roles/iam.serviceAccountTokenCreator` for the Pub/Sub service agent
+   (`service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com`) on that
+   identity.
+
+All three fail the same way: Cloud Run logs "The request was not authenticated
+... IAM principal lacks {run.routes.invoke}" and Pub/Sub retries in the
+background, so publishing still looks successful. The DSL emits (2) and (3)
+automatically.
+
+Do not diagnose from the first 403s: a freshly created `run.invoker` binding
+took about two minutes to take effect in a live test, with retries failing
+until then. Wait, then read the receiver's logs — a delivery that starts
+succeeding after the retries proves the wiring.
+
+Note that Cloud Run v2 and Pub/Sub do not expose `getIamPolicy` in their REST
+discovery documents (a `POST ...:getIamPolicy` returns a GFE 404), so verify
+these grants through Terraform state or the service-account IAM policy rather
+than the service API.
+
+### `/healthz` is intercepted by the Google frontend
+Cloud Run probes that request `/healthz` reach the container and pass, but an
+external `https://*.run.app/healthz` request is answered by the frontend with
+Google's HTML 404. Use `/health` (or a custom path) for a probe endpoint you also
+want to curl. Observed live: service `Ready`, container serving `/` and `/beat`,
+`/healthz` 404 from GFE.
+
+### Cloud Run v2 REST flattens status onto the resource
+`GET .../services/{name}` returns `conditions`, `terminalCondition`,
+`latestReadyRevision`, `trafficStatuses` at the top level — not under `status` as
+the proto suggests. Reading `payload["status"]` raises `KeyError`. Worker pool
+GETs are the same, and may return an empty `conditions` list while the pool is
+running (check `latestReadyRevision` and the logs instead).
+
+### Worker pools have no ingress, probes or timeout
+`google_cloud_run_v2_worker_pool` takes `scaling` as a **sibling** of `template`,
+not inside it, and the template has no `timeout`, `ingress` or probe blocks. A
+worker pool cannot be health-checked by Cloud Run; make the worker fail fast on
+its own. `launch_stage` may need `BETA` while the feature is in preview.
+
+### Job `max_retries` is on the inner template
+`google_cloud_run_v2_job` nests two `template` blocks: the outer one takes
+`task_count` and `parallelism`; the inner execution template takes `timeout`,
+`service_account`, `containers` and `max_retries`. Putting `max_retries` on the
+outer block fails `tofu validate` (observed on 6.50).
+
+### Artifact Registry push auth
+`docker login -u oauth2accesstoken --password-stdin https://REGION-docker.pkg.dev`
+with an OAuth access token works for a service-account key. The repository must
+exist before the first push, so create it in a separate apply from the service
+that uses the image. Destroying the repository also removes its images.
+
+### OpenTofu does not build images
+`google_cloud_run_v2_service` takes an image reference. Build/push in CI or use
+a `google_cloudbuild_trigger`; `gcloud run deploy --source` is not a Terraform
+resource.
 
 ## OpenTofu / GCP
 

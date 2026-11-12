@@ -8,7 +8,7 @@ changes.
 
 from typing import Any
 
-from python_tofu import BucketObject, StorageBucket
+from python_tofu import BucketObject, StackPart, StorageBucket
 
 from .foundation import LOCATION, PROJECT
 
@@ -43,3 +43,5 @@ bucket_objects = [
         content_type="text/plain",
     ),
 ]
+
+part = StackPart(name="storage", buckets=buckets, bucket_objects=bucket_objects)
