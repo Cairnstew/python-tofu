@@ -147,6 +147,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PATH`, `environmentFile` supports secret files, and `schedule` creates a
   `systemd.timer`. The unit also sets `TF_PLUGIN_CACHE_DIR` under its workdir.
 - The packaged app installs bash, zsh and fish completions under `share/`.
+- `packages.<system>.with-tofu` (and `nix run .#with-tofu`) bundles OpenTofu
+  with the mirrored `hashicorp/google` provider and sets `PYTHON_TOFU_BINARY`,
+  so `init`/`plan` work with no registry access. `--binary` also reads
+  `PYTHON_TOFU_BINARY` directly.
 
 ### Changed
 

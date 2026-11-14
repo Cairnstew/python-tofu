@@ -94,11 +94,29 @@
     {
       packages = forAllSystems (
         system:
-        let p = pythonSets.${system}; in
-        {
-          default = p.pkgs.callPackage ./nix/default.nix {
+        let
+          p = pythonSets.${system};
+          app = p.pkgs.callPackage ./nix/default.nix {
             inherit (p) pythonSet pkgs;
             inherit workspace pyproject-nix;
+          };
+
+          # The app plus an OpenTofu build that already carries the mirrored
+          # provider. The wrapper points --binary at the sibling `tofu`, so
+          # `nix run .#with-tofu` works without anything on the caller's PATH.
+          tofu = p.pkgs.opentofu.withPlugins (plugins: [ plugins.hashicorp_google ]);
+        in
+        {
+          default = app;
+
+          with-tofu = p.pkgs.symlinkJoin {
+            name = "python-tofu-with-tofu";
+            paths = [ app tofu ];
+            nativeBuildInputs = [ p.pkgs.makeWrapper ];
+            postBuild = ''
+              wrapProgram "$out/bin/python-tofu" \
+                --set PYTHON_TOFU_BINARY "$out/bin/tofu"
+            '';
           };
         }
       );
@@ -110,6 +128,14 @@
             program = "${self.packages.${system}.default}/bin/python-tofu";
             meta = {
               description = "Typed Python DSL and CLI wrapper for OpenTofu on GCP";
+            };
+          };
+
+          with-tofu = {
+            type = "app";
+            program = "${self.packages.${system}.with-tofu}/bin/python-tofu";
+            meta = {
+              description = "python-tofu with the mirrored hashicorp/google provider and OpenTofu";
             };
           };
         }
@@ -231,6 +257,19 @@
         in
         {
           build = pkg;
+
+          # The self-contained variant must ship both binaries and point the
+          # CLI at the sibling `tofu` (which carries the provider mirror).
+          with-tofu-wired = pkgs.runCommand "check-with-tofu"
+            {
+              nativeBuildInputs = [ self.packages.${system}.with-tofu ];
+            }
+            ''
+              test -x ${self.packages.${system}.with-tofu}/bin/tofu
+              python-tofu --version > /dev/null
+              grep -q "PYTHON_TOFU_BINARY" ${self.packages.${system}.with-tofu}/bin/python-tofu
+              touch "$out"
+            '';
 
           # The provider nixpkgs bundles must satisfy the constraint the app
           # renders. When the weekly flake update moves hashicorp/google out of

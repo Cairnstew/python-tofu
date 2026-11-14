@@ -78,6 +78,33 @@ def test_plan_uses_fake_tofu(
     assert "1 to update" in result.output
 
 
+def test_binary_comes_from_the_environment(
+    runner: CliRunner,
+    cli,
+    config_file: Path,
+    tmp_path: Path,
+    fake_tofu: Path,
+    monkeypatch,
+) -> None:
+    """The Nix wrapper selects `tofu` without changing every call site."""
+
+    monkeypatch.setenv("PYTHON_TOFU_BINARY", str(fake_tofu))
+    result = runner.invoke(
+        cli,
+        [
+            "plan",
+            "--config",
+            str(config_file),
+            "--workdir",
+            str(tmp_path / "tofu"),
+            "--no-init",
+            "--verbose",
+        ],
+    )
+    assert result.exit_code == 0, _combined(result)
+    assert str(fake_tofu) in _combined(result)
+
+
 def test_plan_json_summary(
     runner: CliRunner, cli, config_file: Path, tmp_path: Path, fake_tofu: Path
 ) -> None:
