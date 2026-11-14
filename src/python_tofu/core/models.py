@@ -109,11 +109,16 @@ class PruneConfig(TofuModel):
 
     Off by default. Set ``enabled=True`` to make the selected sections
     authoritative; ``sections=("all",)`` covers every section the provider
-    supports. Providers validate section names against their own list.
+    supports. Service accounts are excluded from ``all`` and require a second,
+    explicit gate (``include_service_accounts=True`` plus the CLI's
+    ``--allow-service-accounts``) because deleting the identity that runs the
+    tool is irreversible. Providers validate section names against their own
+    list.
     """
 
     enabled: bool = False
     sections: tuple[str, ...] = (ALL_SECTIONS,)
+    include_service_accounts: bool = False
 
     @field_validator("sections")
     @classmethod

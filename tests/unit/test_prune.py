@@ -48,6 +48,7 @@ APIS = [
     {"name": "projects/123/services/storage.googleapis.com", "state": "ENABLED"},
     {"name": "projects/123/services/pubsub.googleapis.com", "state": "ENABLED"},
     {"name": "projects/123/services/cloudasset.googleapis.com", "state": "ENABLED"},
+    {"name": "projects/123/services/cloudbilling.googleapis.com", "state": "ENABLED"},
     {"name": "projects/123/services/bigquery.googleapis.com", "state": "DISABLED"},
 ]
 
@@ -133,6 +134,7 @@ def test_discovery_skips_protected_apis_inventory(inventory: None) -> None:
     services = {resource.description for resource in plan.resources}
     assert "API pubsub.googleapis.com" in services
     assert "API cloudasset.googleapis.com" not in services
+    assert "API cloudbilling.googleapis.com" not in services
     assert "API storage.googleapis.com" not in services
     assert "API bigquery.googleapis.com" not in services
 
@@ -233,8 +235,13 @@ def test_reaper_keeps_scratch_on_failure(tmp_path: Path, inventory: None) -> Non
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
-def _write_config(tmp_path: Path, enabled: bool) -> Path:
-    prune = "prune=PruneConfig(enabled=True)," if enabled else ""
+def _write_config(tmp_path: Path, enabled: bool, include_service_accounts: bool = False) -> Path:
+    options: list[str] = []
+    if enabled:
+        options.append("enabled=True")
+    if include_service_accounts:
+        options.append("include_service_accounts=True")
+    prune = f"prune=PruneConfig({', '.join(options)})," if options else ""
     path = tmp_path / "infra.py"
     path.write_text(
         f"""\
@@ -275,8 +282,9 @@ def test_cli_prune_dry_run_lists_resources(
     )
 
     assert result.exit_code == 0, _combined(result)
-    assert "Prune plan: 3 undeclared resource(s)" in result.output
+    assert "Prune plan: 2 undeclared resource(s)" in result.output
     assert "stray-bucket" in result.output
+    assert "service accounts are skipped" in _combined(result)
     assert "Dry run" in result.output
 
 
@@ -323,7 +331,7 @@ def test_cli_prune_apply_deletes(
     )
 
     assert result.exit_code == 0, _combined(result)
-    assert "Pruned 3 resource(s)." in result.output
+    assert "Pruned 2 resource(s)." in result.output
     assert not (tmp_path / "tofu" / Reaper.DIRECTORY).exists()
 
 
@@ -346,7 +354,7 @@ def test_cli_plan_with_prune_previews_only(
     )
 
     assert result.exit_code == 0, _combined(result)
-    assert "Prune plan: 3 undeclared resource(s)" in result.output
+    assert "Prune plan: 2 undeclared resource(s)" in result.output
     assert "Dry run" in result.output
 
 
@@ -369,7 +377,52 @@ def test_cli_apply_with_prune_prunes_after_apply(
     )
 
     assert result.exit_code == 0, _combined(result)
-    assert "Pruned 3 resource(s)." in result.output
+    assert "Pruned 2 resource(s)." in result.output
+
+
+def test_cli_prune_service_accounts_needs_both_gates(
+    runner: CliRunner, cli: object, tmp_path: Path, inventory: None
+) -> None:
+    config = _write_config(tmp_path, enabled=True, include_service_accounts=True)
+
+    blocked = runner.invoke(
+        cli,
+        ["prune", "--config", str(config), "--section", "service_accounts"],
+    )
+    assert blocked.exit_code == 1
+    assert "--allow-service-accounts" in _combined(blocked)
+
+    allowed = runner.invoke(
+        cli,
+        [
+            "prune",
+            "--config",
+            str(config),
+            "--section",
+            "service_accounts",
+            "--allow-service-accounts",
+        ],
+    )
+    assert allowed.exit_code == 0, _combined(allowed)
+    assert "service account manual@demo-project.iam.gserviceaccount.com" in allowed.output
+
+
+def test_cli_prune_all_skips_service_accounts_without_run_gate(
+    runner: CliRunner, cli: object, tmp_path: Path, inventory: None
+) -> None:
+    config = _write_config(tmp_path, enabled=True, include_service_accounts=True)
+
+    skipped = runner.invoke(cli, ["prune", "--config", str(config), "--all"])
+    assert skipped.exit_code == 0, _combined(skipped)
+    assert "Prune plan: 2 undeclared resource(s)" in skipped.output
+    assert "service accounts are skipped" in _combined(skipped)
+
+    allowed = runner.invoke(
+        cli,
+        ["prune", "--config", str(config), "--all", "--allow-service-accounts"],
+    )
+    assert allowed.exit_code == 0, _combined(allowed)
+    assert "Prune plan: 3 undeclared resource(s)" in allowed.output
 
 
 def test_cli_apply_prune_with_plan_file_fails(

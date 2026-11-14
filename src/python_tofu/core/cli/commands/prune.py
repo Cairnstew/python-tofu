@@ -13,6 +13,7 @@ import typer
 
 from python_tofu.core.cli.base import BaseCommand
 from python_tofu.core.cli.options import (
+    AllowServiceAccountsOption,
     BinaryOption,
     ConfigOption,
     FailOnUnknownOption,
@@ -51,6 +52,7 @@ def create_app(provider: Provider) -> typer.Typer:
         auto_approve: bool = typer.Option(
             False, "--auto-approve", help="Skip the deletion confirmation."
         ),
+        allow_service_accounts: AllowServiceAccountsOption = False,
     ) -> None:
         command = BaseCommand(
             make_context(
@@ -83,7 +85,10 @@ def create_app(provider: Provider) -> typer.Typer:
             )
 
         sections = command.prune_sections(
-            stack, enabled=True if selected else None, sections=selected
+            stack,
+            enabled=True if selected else None,
+            sections=selected,
+            allow_service_accounts=allow_service_accounts,
         )
         command.prune(stack, sections, dry_run=not apply_changes, auto_approve=auto_approve)
 

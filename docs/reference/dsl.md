@@ -136,8 +136,10 @@ Renders `google_billing_budget`: an alert-only guardrail on a billing account.
 Budgets never disable billing by themselves; this model only sets thresholds and
 notification settings. Notifications go to the billing administrators by
 default. The budget is billing-account scoped, but enabling
-`cloudbilling.googleapis.com` is project scoped, so it is derived on the
+`billingbudgets.googleapis.com` is project scoped, so it is derived on the
 provider project (disable with `GcpProvider(auto_enable_apis=False)`).
+`cloudbilling.googleapis.com` is a different API (billing-account metadata) and
+is not enabled for budgets.
 `all_updates_rule` is emitted only when `pubsub_topic` or
 `notification_channels` is set; `disable_default_recipients` requires one of
 them, because an empty rule fails `tofu validate`.
@@ -184,17 +186,23 @@ stack = GcpStack(
 
 | Resource | APIs enabled |
 |---|---|
-| billing budget | `cloudbilling` (on the provider project) |
+| provider (`impersonate_service_account`) | `iamcredentials` (on the provider project) |
+| project | `cloudresourcemanager` (+ `cloudbilling` when `billing_account` is set) |
+| billing budget | `billingbudgets` (on the provider project) |
 | bucket / object | `storage` |
 | service account, IAM binding | `iam` (+ `cloudresourcemanager` for role bindings) |
 | Artifact Registry repo | `artifactregistry` |
-| Cloud Run service / job / worker pool | `run` (+ `iam` when an invoker is granted) |
-| Cloud Run function | `cloudfunctions`, `cloudbuild`, `run`, `eventarc`, `artifactregistry`, `storage` |
-| Pub/Sub topic / subscription | `pubsub` (+ `iam`/`run` for dead letters and push) |
+| Cloud Run service / job / worker pool | `run` (+ `iam` when an invoker is granted, `secretmanager` for secrets, `storage` for GCS volumes, `sqladmin` for Cloud SQL volumes) |
+| Cloud Run function | `cloudfunctions`, `cloudbuild`, `run`, `eventarc`, `artifactregistry`, `storage`, `pubsub`, `logging` (+ `secretmanager` for secrets) |
+| Pub/Sub topic / subscription | `pubsub` (+ `iam`/`cloudresourcemanager` for dead letters and push OIDC, `run` for push) |
 
 Only projects the stack owns are touched: the provider project and anything in
 `projects`. Resources pointing at `external_projects` never enable APIs there.
-`serviceusage` is always added alongside any derived API.
+`serviceusage` is always added alongside any derived API, and every owned
+project also gets `GcpProvider.default_apis` (the control-plane baseline in
+`providers/gcp/service_names.py`). Those baseline APIs are never pruned; add
+workload APIs with `default_apis=(...)` or `apis=[ProjectApi(...)]` to keep
+them, or leave them out so `prune` can remove them.
 
 Turn it off when enablement belongs to another pipeline:
 
@@ -217,6 +225,7 @@ only *declares* them — nothing is enabled until apply.
 | `impersonate_service_account` | `str \| None` | `None` | Impersonation target |
 | `default_labels` | `dict[str, str]` | `{}` | Provider-wide labels |
 | `auto_enable_apis` | `bool` | `true` | Enable and order the APIs declared resources need |
+| `default_apis` | `tuple[str, ...]` | control-plane baseline | APIs enabled on every owned project and protected from prune |
 
 ## `GcpProject`
 
@@ -227,7 +236,10 @@ are mutually exclusive.
 ## `ProjectApi`
 
 Enables a `google_project_service`. `service` is a full API name such as
-`storage.googleapis.com`.
+`storage.googleapis.com`. `disable_on_destroy=False` leaves the API enabled when
+the resource is destroyed; `disable_dependent_services=True` lets Service Usage
+disable dependents in the same operation. `prune` sets both on its scratch
+resources so an API dependency chain can be removed in one pass.
 
 To declare APIs by short name and validate them against the project, use the
 Service Usage catalog in `python_tofu.providers.gcp.services`:

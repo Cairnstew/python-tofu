@@ -91,8 +91,11 @@
 │   ├── gcp_clean/
 │   │   ├── stack.py              # Wires the parts together
 │   │   └── parts/                # foundation / storage / iam
-│   └── gcp_pubsub/
-│       ├── stack.py              # Topic/subscription, push + dead letter
+│   ├── gcp_pubsub/
+│   │   ├── stack.py              # Topic/subscription, push + dead letter
+│   │   └── README.md
+│   └── gcp_test_infra/
+│       ├── stack.py              # Free-tier bucket, topic, subscription, account
 │       └── README.md
 │
 ├── tests/
@@ -143,7 +146,7 @@
 │       ├── plugins.md
 │       └── ci.md
 │
-├── flake.nix                     # Flake outputs, devShells, checks
+├── flake.nix                     # Flake outputs: packages, formatter, devShells, checks
 ├── flake.lock
 ├── pyproject.toml
 ├── uv.lock

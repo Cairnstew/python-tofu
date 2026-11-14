@@ -26,6 +26,10 @@ from python_tofu.core.runner import TofuRunner
 def _format_amount(value: float) -> str:
     if float(value).is_integer():
         return f"{int(value):,}"
+    if abs(value) < 0.01:
+        # Preserve small nonzero usage (e.g. a 1 MB bucket estimate) instead of
+        # rounding it to 0, which would look like "unmeasured".
+        return f"{value:.3g}"
     return f"{value:,.2f}".rstrip("0").rstrip(".")
 
 
@@ -112,11 +116,15 @@ class BaseCommand:
         stack: BaseStack,
         enabled: bool | None = None,
         sections: list[str] | None = None,
+        allow_service_accounts: bool = False,
     ) -> tuple[str, ...]:
         """Resolve the stack config and CLI overrides into concrete sections.
 
         Returns an empty tuple when pruning stays disabled, so callers can use
-        the result as a simple "should I prune?" check.
+        the result as a simple "should I prune?" check. Service accounts need
+        both ``stack.prune.include_service_accounts`` and
+        ``allow_service_accounts``; otherwise they are dropped from an ``all``
+        selection and rejected from an explicit one.
         """
 
         provider = self.ctx.provider
@@ -134,9 +142,33 @@ class BaseCommand:
         if not active:
             return ()
         try:
-            return PruneConfig(enabled=True, sections=chosen).resolve(provider.prune_sections)
+            # Bypass the config-level gate here: this method applies the
+            # two-key gate explicitly, and an "all" selection must resolve.
+            resolved = PruneConfig(
+                enabled=True,
+                sections=chosen,
+                include_service_accounts=True,
+            ).resolve(provider.prune_sections)
         except ValueError as exc:
             self.abort(str(exc))
+
+        gate = stack.prune.include_service_accounts and allow_service_accounts
+        if "service_accounts" in resolved and not gate:
+            if sections and "service_accounts" in chosen:
+                self.abort(
+                    "pruning service accounts requires both "
+                    "prune.include_service_accounts=True in the stack and "
+                    "--allow-service-accounts on this run"
+                )
+            resolved = tuple(item for item in resolved if item != "service_accounts")
+            typer.secho(
+                "Note: service accounts are skipped; set "
+                "prune.include_service_accounts=True and pass "
+                "--allow-service-accounts to include them.",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+        return resolved
 
     def prune(
         self,

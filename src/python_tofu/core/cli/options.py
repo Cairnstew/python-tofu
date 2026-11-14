@@ -74,6 +74,16 @@ PruneSectionOption = Annotated[
         ),
     ),
 ]
+AllowServiceAccountsOption = Annotated[
+    bool,
+    typer.Option(
+        "--allow-service-accounts",
+        help=(
+            "Second gate for pruning service accounts. Requires "
+            "prune.include_service_accounts=True in the stack."
+        ),
+    ),
+]
 StackNameOption = Annotated[
     str | None,
     typer.Option(

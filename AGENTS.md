@@ -79,8 +79,13 @@ uv lock
 ### Enter dev environment
 
 ```bash
-nix develop
+nix develop              # default/dev shell: locked venv + tofu + just + pre-commit
+nix develop .#bootstrap  # Python + uv only, for `uv add` / `uv lock`
+nix develop .#cloud      # default shell plus google-cloud-sdk
 ```
+
+The shell installs the pre-commit hook on first entry, sets `TOFU_PLUGIN_CACHE_DIR`
+to `.cache/tofu/plugins`, and exports `REPO_ROOT`.
 
 ### Build for production
 
@@ -92,8 +97,14 @@ nix build .#default
 
 ```bash
 just check        # lint + typecheck + unit/integration tests + flake eval
+just fmt          # ruff fixes/format + `nix fmt`
+just nix-check-build  # build every flake check, same as CI's nix job
 pytest -q         # all tests (unit, integration, nix eval)
 ```
+
+`nix flake check` builds `lint`, `typecheck`, `unit-tests`, `integration-tests`,
+`format`, the example render checks and both module evaluations, using the same
+locked toolchain as the dev shell.
 
 ## Rules for agents
 

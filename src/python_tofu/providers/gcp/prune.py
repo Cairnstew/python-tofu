@@ -48,6 +48,7 @@ from python_tofu.providers.gcp.renderer import (
     _pubsub_topic_block,
     _service_account_block,
 )
+from python_tofu.providers.gcp.service_names import DEFAULT_APIS
 from python_tofu.providers.gcp.stack import GcpStack
 
 PRUNE_SECTIONS = GCP_PRUNE_SECTIONS
@@ -58,19 +59,8 @@ SERVICE_USAGE_BASE = "https://serviceusage.googleapis.com/v1"
 PUBSUB_BASE = "https://pubsub.googleapis.com/v1"
 
 #: APIs the wrapper or the cloud itself needs to finish a prune; never disable.
-PROTECTED_APIS = frozenset(
-    {
-        "billingbudgets.googleapis.com",
-        "cloudasset.googleapis.com",
-        "cloudresourcemanager.googleapis.com",
-        "iam.googleapis.com",
-        "iamcredentials.googleapis.com",
-        "logging.googleapis.com",
-        "monitoring.googleapis.com",
-        "serviceusage.googleapis.com",
-        "storage.googleapis.com",
-    }
-)
+#: ``GcpProvider.default_apis`` adds to this set (see ``_api_plan``).
+PROTECTED_APIS = frozenset(DEFAULT_APIS)
 
 #: Local parts of auto-created service accounts (compute, appspot, agents, ...).
 _DEFAULT_ACCOUNT_RE = re.compile(r"^(?:\d+|\d+-compute|service-\d+|cloudservices)$")
@@ -307,9 +297,17 @@ def _api_plan(stack: GcpStack, token: str) -> list[PrunableResource]:
             continue
         if str(data.get("state") or "ENABLED").upper() != "ENABLED":
             continue
-        if service in PROTECTED_APIS:
+        if service in PROTECTED_APIS or service in stack.provider.default_apis:
             continue
-        api = ProjectApi(project=project, service=service, disable_on_destroy=True)
+        api = ProjectApi(
+            project=project,
+            service=service,
+            disable_on_destroy=True,
+            # Removing a service often requires removing its dependents first
+            # (cloudapis, telemetry, geminicloudassist, ...). Prune is already
+            # authoritative for the project, so let Service Usage cascade.
+            disable_dependent_services=True,
+        )
         found.append(
             PrunableResource(
                 section="apis",

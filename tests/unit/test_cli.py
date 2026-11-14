@@ -5,12 +5,27 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from python_tofu.core.cli.base import format_limit
+from python_tofu.core.limits import LimitCheck, LimitPeriod
+
 ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_CONFIG = ROOT / "examples" / "gcp_bootstrap" / "infra.py"
 
 
 def _combined(result) -> str:
     return result.output + getattr(result, "stderr", "")
+
+
+def test_format_limit_keeps_small_nonzero_usage() -> None:
+    check = LimitCheck(
+        key="gcp.storage.standard_gb",
+        area="storage",
+        unit="GB",
+        used=0.001,
+        amount=5,
+        period=LimitPeriod.MONTH,
+    )
+    assert "0.001/5 GB" in format_limit(check)
 
 
 def test_help(runner: CliRunner, cli) -> None:

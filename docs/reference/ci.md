@@ -25,9 +25,11 @@ Both filters also match `.github/workflows/**`, so a workflow edit runs the
 jobs it changes instead of passing with only the `changes` job.
 
 `nix.yml` runs the full `nix flake check` (which builds the `checks.*`
-derivations, including `format`, `render-example`, `render-clean-example`,
-`module-eval` and `home-module-eval`) followed by `nix build .#default` — it is
-the slowest job and the one that catches a renderer or module regression.
+derivations: `lint`, `typecheck`, `unit-tests`, `integration-tests`, `format`,
+`render-example`, `render-clean-example`, `render-test-example`, `module-eval`
+and `home-module-eval`) followed by `nix build .#default` — it is the slowest
+job, but `nix flake check` locally is now the same gate, using the locked dev
+venv rather than `uv run`.
 
 Before tagging the first release, configure a PyPI trusted publisher for this
 repository (workflow `release.yml`, environment `release`); otherwise the

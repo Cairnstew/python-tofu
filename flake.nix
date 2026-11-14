@@ -72,9 +72,18 @@
           );
 
           editablePythonSet = pythonSet.overrideScope editableOverlay;
+
+          # Editable environment for `nix develop`: `python-tofu` imports from
+          # $REPO_ROOT/src and every dependency group (pytest, ruff, mypy, ...)
+          # comes from the same uv.lock as CI.
+          devVenv = editablePythonSet.mkVirtualEnv "dev-env" workspace.deps.all;
+
+          # Read-only environment for `nix flake check`. The source is a store
+          # path here, so use the non-editable package build instead.
+          checkVenv = pythonSet.mkVirtualEnv "check-env" workspace.deps.all;
         in
         {
-          inherit pythonSet editablePythonSet python pkgs;
+          inherit pythonSet editablePythonSet python pkgs devVenv checkVenv;
         }
       );
     in
@@ -102,27 +111,95 @@
         }
       );
 
+      # Format Nix files with `nix fmt`; the `format` check uses the same tool.
+      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixpkgs-fmt);
+
       devShells = forAllSystems (system:
         let
           p = pythonSets.${system};
-          virtualenv = p.editablePythonSet.mkVirtualEnv "dev-env" workspace.deps.all;
-        in
-        {
-          default = p.pkgs.mkShell {
-            packages = [ virtualenv p.pkgs.uv p.pkgs.opentofu p.pkgs.jq ];
+          inherit (p) pkgs python;
+
+          # Shared environment. `nix develop` is impure, so host tooling (nix,
+          # direnv, editors) stays on PATH; these packages are only additions.
+          devPackages = [
+            p.devVenv
+            pkgs.uv
+            pkgs.opentofu
+            pkgs.just
+            pkgs.pre-commit
+            pkgs.nixpkgs-fmt
+            pkgs.git
+            pkgs.gh
+            pkgs.curl
+            pkgs.jq
+          ];
+
+          shellHook = ''
+            unset PYTHONPATH
+            export REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
+
+            # Cache providers inside the repo so repeated `tofu init` is fast
+            # and nothing leaks into the user's home. Gitignored via `.cache/`.
+            export TOFU_PLUGIN_CACHE_DIR="$REPO_ROOT/.cache/tofu/plugins"
+            mkdir -p "$TOFU_PLUGIN_CACHE_DIR"
+            export CHECKPOINT_DISABLE=1
+
+            # Install the pre-commit hook once per clone. Never let a missing
+            # network or bare worktree block entering the shell.
+            if [ -d "$REPO_ROOT/.git" ] && [ ! -f "$REPO_ROOT/.git/hooks/pre-commit" ]; then
+              pre-commit install >/dev/null 2>&1 || true
+            fi
+          '';
+
+          devShell = pkgs.mkShell {
+            packages = devPackages;
             env = {
               UV_NO_SYNC = "1";
-              UV_PYTHON = "${p.python.interpreter}";
+              UV_PYTHON = "${python.interpreter}";
               UV_PYTHON_DOWNLOADS = "never";
             };
+            shellHook = shellHook + ''
+              echo "python-tofu dev shell — Python 3.12 + tofu $(tofu version | head -n1 | cut -d' ' -f2)"
+              echo "  just check        lint, typecheck, tests, nix flake check"
+              echo "  just lint-fix     apply ruff fixes and formatting"
+              echo "  nix fmt           format .nix files"
+              echo "  nix flake check   every check CI runs"
+              echo "  python-tofu --help"
+            '';
+          };
+        in
+        {
+          default = devShell;
+          dev = devShell;
+
+          # Only what `uv add` / `uv lock` / `uv lock --upgrade` need. Kept
+          # separate because it deliberately does not pin the Nix virtualenv.
+          bootstrap = pkgs.mkShell {
+            packages = [ pkgs.python312 pkgs.uv pkgs.git ];
+            env = {
+              UV_PYTHON = "${pkgs.python312.interpreter}";
+              UV_PYTHON_DOWNLOADS = "never";
+              UV_NO_SYNC = "1";
+            };
             shellHook = ''
-              unset PYTHONPATH
-              export REPO_ROOT=$(git rev-parse --show-toplevel)
+              echo "python-tofu bootstrap shell — edit pyproject.toml, then:"
+              echo "  uv add <package> && uv lock"
+              echo "  uv lock --upgrade"
             '';
           };
 
-          bootstrap = p.pkgs.mkShell {
-            packages = [ p.pkgs.python312 p.pkgs.uv ];
+          # Opt-in shell for live GCP work. The SDK is large, so it is not in
+          # the default shell; `python-tofu` itself only needs the Python deps.
+          cloud = pkgs.mkShell {
+            packages = devPackages ++ [ pkgs.google-cloud-sdk ];
+            env = {
+              UV_NO_SYNC = "1";
+              UV_PYTHON = "${python.interpreter}";
+              UV_PYTHON_DOWNLOADS = "never";
+            };
+            shellHook = shellHook + ''
+              echo "python-tofu cloud shell — google-cloud-sdk on PATH"
+            '';
           };
         }
       );
@@ -193,6 +270,64 @@
             grep -q 'google_storage_bucket' "$out/main.tf"
             grep -q 'google_project_iam_member' "$out/main.tf"
             tofu fmt -check -recursive "$out"
+          '';
+
+          render-test-example = pkgs.runCommand "render-test-example"
+            {
+              nativeBuildInputs = [ self.packages.${system}.default pkgs.opentofu ];
+            } ''
+            python-tofu render \
+              --config ${./examples/gcp_test_infra/stack.py} \
+              --workdir "$out" > /dev/null
+            grep -q 'google_pubsub_topic' "$out/main.tf"
+            grep -q 'google_storage_bucket' "$out/main.tf"
+            tofu fmt -check -recursive "$out"
+          '';
+
+          # The checks below run the same locked dev toolchain as the dev shell,
+          # so `nix flake check` locally covers everything CI runs separately.
+          lint = pkgs.runCommand "lint"
+            {
+              nativeBuildInputs = [ p.checkVenv ];
+            } ''
+            cd ${./.}
+            export PYTHONDONTWRITEBYTECODE=1
+            export RUFF_CACHE_DIR="$TMPDIR/ruff-cache"
+            ruff check --no-cache src tests
+            ruff format --check src tests
+            touch "$out"
+          '';
+
+          typecheck = pkgs.runCommand "typecheck"
+            {
+              nativeBuildInputs = [ p.checkVenv ];
+            } ''
+            cd ${./.}
+            export PYTHONDONTWRITEBYTECODE=1
+            mypy --cache-dir "$TMPDIR/mypy-cache" src
+            touch "$out"
+          '';
+
+          unit-tests = pkgs.runCommand "unit-tests"
+            {
+              nativeBuildInputs = [ p.checkVenv ];
+            } ''
+            cd ${./.}
+            export HOME="$TMPDIR"
+            export PYTHONDONTWRITEBYTECODE=1
+            pytest tests/unit -q -p no:cacheprovider --no-header
+            touch "$out"
+          '';
+
+          integration-tests = pkgs.runCommand "integration-tests"
+            {
+              nativeBuildInputs = [ p.checkVenv ];
+            } ''
+            cd ${./.}
+            export HOME="$TMPDIR"
+            export PYTHONDONTWRITEBYTECODE=1
+            pytest tests/integration -q -p no:cacheprovider --no-header
+            touch "$out"
           '';
 
           module-eval =

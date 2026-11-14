@@ -56,9 +56,9 @@ def test_render_writes_managed_files(tmp_path: Path, sample_stack: GcpStack) -> 
     workdir = tmp_path / "tofu"
     result = Renderer(workdir).render(sample_stack)
 
-    # Six declared resources plus three auto-enabled APIs (service usage, IAM,
-    # Cloud Resource Manager) that their resources need.
-    assert result.resources == 9
+    # Five declared resources (project, service account + role, bucket, IAM
+    # member) plus the ten protected baseline APIs.
+    assert result.resources == 15
     assert workdir.is_dir()
     assert {path.name for path in result.files} == {
         "versions.tf",
@@ -81,9 +81,9 @@ def test_extra_files_are_written(tmp_path: Path, sample_stack: GcpStack) -> None
     result = Renderer(tmp_path).render(stack)
     assert (tmp_path / "biglake.tf").read_text() == files["biglake.tf"]
     assert "biglake.tf" in {path.name for path in result.files}
-    # Six declared resources plus three auto-enabled APIs (service usage, IAM,
-    # Cloud Resource Manager) that their resources need.
-    assert result.resources == 9
+    # Five declared resources (project, service account + role, bucket, IAM
+    # member) plus the ten protected baseline APIs.
+    assert result.resources == 15
 
 
 def test_extra_files_cannot_override_managed(tmp_path: Path, sample_stack: GcpStack) -> None:

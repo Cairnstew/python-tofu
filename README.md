@@ -35,14 +35,25 @@ still works and the standard ADC mechanisms apply.
 
 ## Quick start
 
-The dev shell provides Python, `uv`, `pytest`, `jq` and OpenTofu:
+The default dev shell provides Python 3.12, `uv`, the locked `python-tofu`
+virtualenv (`python-tofu`, `pytest`, `ruff`, `mypy`), `just`, `pre-commit`,
+`nixpkgs-fmt`, `gh`, `jq` and OpenTofu. Entering it installs the git hook once
+and points `TOFU_PLUGIN_CACHE_DIR` at the gitignored `.cache/tofu/plugins`.
 
 ```bash
-nix develop
+nix develop            # full dev shell
 python-tofu --help
+just check             # lint + typecheck + tests + nix flake check
 
 python-tofu render --config examples/gcp_bootstrap/infra.py --workdir .tofu/example
 python-tofu plan   --config examples/gcp_bootstrap/infra.py --workdir .tofu/example
+```
+
+Other shells:
+
+```bash
+nix develop .#bootstrap   # only Python + uv, for `uv add` / `uv lock`
+nix develop .#cloud       # dev shell plus google-cloud-sdk
 ```
 
 `plan` renders the stack, runs `tofu init`, saves `plan.tfplan`, and prints a
@@ -208,16 +219,17 @@ See the [limits reference](docs/reference/limits.md).
 
 ## Pruning undeclared infrastructure
 
-Pruning is **off by default**. Enable it per stack to make selected sections
-authoritative — anything that exists in the cloud but is not declared is deleted:
+Pruning is **off by default**. Enable it per stack to make the project
+authoritative — anything that exists in the cloud but is not declared is
+deleted:
 
 ```python
 from python_tofu import GcpStack, PruneConfig
 
 stack = GcpStack(
     ...,
-    prune=PruneConfig(enabled=True, sections=("buckets", "subscriptions", "topics",
-                                       "service_accounts", "apis")),
+    # Enabled: every section. Service accounts still need the two-key gate.
+    prune=PruneConfig(enabled=True),
 )
 ```
 
@@ -230,13 +242,15 @@ python-tofu apply --config infra.py --prune    # apply, then prune leftovers
 ```
 
 `prune` discovers live resources with the service read APIs (Storage, IAM,
-Service Usage) and deletes them
-through a throw-away OpenTofu root module, so deletes use the provider's own
-logic and never touch the stack's state backend. Supported sections are
-`buckets`, `subscriptions`, `topics`, `service_accounts` and `apis`; bucket deletion force-destroys
-objects. Google-managed service accounts and essential APIs are never pruned.
-Bucket objects cannot be imported by the provider, and project IAM bindings are
-excluded because an authoritative IAM sweep can remove human access.
+Service Usage) and deletes them through a throw-away OpenTofu root module, so
+deletes use the provider's own logic and never touch the stack's state backend.
+Supported sections are `buckets`, `subscriptions`, `topics`,
+`service_accounts` and `apis`; bucket deletion force-destroys objects.
+`GcpProvider.default_apis` (the control-plane baseline) is never pruned, and
+`service_accounts` needs both `PruneConfig(include_service_accounts=True)` and
+`--allow-service-accounts`; `--all` skips them otherwise. Bucket objects cannot
+be imported by the provider, and project IAM bindings are excluded because an
+authoritative IAM sweep can remove human access.
 
 ## Providers
 
@@ -272,11 +286,28 @@ See the [CI reference](docs/reference/ci.md) for the per-workflow job table.
 
 ## Development
 
+Everything runs from the Nix dev shell, against the same locked toolchain CI
+uses (uv.lock), so local results do not drift from CI.
+
 ```bash
-just check      # lint + typecheck + unit/integration tests + flake evaluation
-just test       # all tests
-just nix-build  # build the application
+nix develop        # or let direnv enter it on `cd`
+just check         # lint + typecheck + unit/integration tests + flake evaluation
+just test          # every test tier
+just fmt           # ruff fixes/format, then `nix fmt`
+just coverage      # unit tests with a missing-lines report
+just audit         # pip-audit + bandit
+just pre-commit    # run every hook over the tree
+just nix-check     # evaluate all flake checks (fast)
+just nix-check-build  # build every flake check (same as CI's nix job)
+just nix-build     # build the application
+nix fmt            # format .nix files (nixpkgs-fmt)
 ```
+
+`nix flake check` is the single gate: it builds `lint`, `typecheck`,
+`unit-tests`, `integration-tests`, `format`, the example render checks, and the
+NixOS/Home Manager module evaluations. The shell installs the pre-commit hook on
+first entry; `pre-commit run --all-files` runs the same ruff, mypy and
+`nixpkgs-fmt` hooks over a dirty tree.
 
 ## Docs
 
@@ -289,3 +320,4 @@ just nix-build  # build the application
 - [CI reference](docs/reference/ci.md)
 - [NixOS integration](docs/guides/nixos-integration.md)
 - [GCP bootstrap example](examples/gcp_bootstrap/README.md)
+- [Free-tier test infrastructure](examples/gcp_test_infra/README.md)

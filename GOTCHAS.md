@@ -137,13 +137,45 @@ need it.
 (403, 429, 5xx) propagate as `GoogleApiError`. Do not turn 403 into "unknown" —
 that hides a permissions problem.
 
+## API enablement
+
+### Cloud Billing and Billing Budgets are different services
+`google_billing_budget` calls `billingbudgets.googleapis.com`, not
+`cloudbilling.googleapis.com`. Cloud Billing is the billing-account metadata API
+used by `google_project` when `billing_account` is set and by `python-tofu
+doctor`; enabling one does not enable the other. A budget is billing-account
+scoped, but the Budgets API is enabled per project, so `apis_for` derives it on
+the provider project.
+
+### Derived APIs follow typed fields, not raw HCL
+`apis.py` only sees the typed models. A field that reaches another service (a
+`SecretEnv`, a Cloud SQL or GCS volume, a Pub/Sub IAM member that resolves the
+project number) needs a matching branch in `apis_for`; otherwise the first apply
+fails with a 403 even though the resource is declared. Raw resources added with
+`extra_files` never derive APIs — add `depends_on` by hand (see the BigLake
+example).
+
 ## Pruning
 
 ### Pruning is opt-in and irreversible
-`PruneConfig` defaults to `enabled=False`. When enabled, anything the stack does
-not declare is deleted. Buckets are adopted with `force_destroy=True`, so
-pruning a bucket deletes every object in it. Do not enable a section you cannot
-recreate.
+`PruneConfig` defaults to `enabled=False`. When enabled, `sections` defaults to
+`("all",)`, so anything the stack does not declare is deleted. Buckets are
+adopted with `force_destroy=True`, so pruning a bucket deletes every object in
+it. Do not enable a section you cannot recreate.
+
+### Service accounts are a two-key gate
+Deleting the identity that runs `tofu` is irreversible, so `service_accounts`
+is excluded from `--all` and from the stack's `enabled=True` unless **both**
+`PruneConfig.include_service_accounts=True` and the CLI's
+`--allow-service-accounts` are set. `--section service_accounts` without both
+aborts instead of silently skipping. Do not collapse this into one flag.
+
+### APIs use a default baseline
+`GcpProvider.default_apis` (from `providers/gcp/service_names.py`) is enabled
+on every owned project and never pruned. Undeclared workload APIs are pruned;
+add `compute`, `run` or similar to `default_apis`/`apis` if other infrastructure
+still needs them. Do not protect every API: the point is to make the stack the
+source of truth for the project's API state.
 
 ### Only importable resource types can be pruned
 Deletion runs through `tofu import` + `tofu destroy` in a scratch module. The
@@ -160,9 +192,8 @@ backend — a destroy there would delete managed state.
 
 ### Google-managed resources are skipped by name
 `providers/gcp/prune.py` skips default service accounts (`*-compute`,
-appspot, `service-N`) and a protected API list (Cloud Asset Inventory, IAM,
-Cloud Resource Manager, Service Usage, Storage, logging, monitoring, billing
-budgets). Pruning those breaks the project or the wrapper mid-run.
+appspot, `service-N`) and the `GcpProvider.default_apis` baseline. Pruning those
+breaks the project or the wrapper mid-run.
 
 ### Discovery uses service APIs, not Cloud Asset Inventory
 Buckets, service accounts and enabled APIs are listed with the Storage, IAM and

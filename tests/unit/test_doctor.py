@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from python_tofu.core.doctor import CheckResult, CheckStatus, DoctorReport
 from python_tofu.providers.gcp import GcpProvider, GcpStack
+from python_tofu.providers.gcp.apis import DEFAULT_APIS, STORAGE
 from python_tofu.providers.gcp.cli import doctor as doctor_module
 from python_tofu.providers.gcp.live import GoogleApiError
 from python_tofu.providers.gcp.services import Service
@@ -56,7 +57,7 @@ def _stack(**overrides: Any) -> GcpStack:
 
 
 class _Catalog:
-    enabled_names: set[str] = {"serviceusage.googleapis.com", "storage.googleapis.com"}
+    enabled_names: set[str] = set(DEFAULT_APIS)
 
     def __init__(self, project: str, *, token: str | None = None, **_: Any) -> None:
         self.project = project
@@ -112,7 +113,7 @@ def api(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(doctor_module.live, "access_token", fake_token)
     monkeypatch.setattr(doctor_module.live, "get_json", fake_get)
     monkeypatch.setattr(doctor_module, "ServiceCatalog", _Catalog)
-    _Catalog.enabled_names = {"serviceusage.googleapis.com", "storage.googleapis.com"}
+    _Catalog.enabled_names = set(DEFAULT_APIS)
     return state
 
 
@@ -192,7 +193,7 @@ def test_disabled_billing_fails(api: dict[str, Any], tmp_path: Path) -> None:
 
 
 def test_disabled_apis_are_listed(api: dict[str, Any], tmp_path: Path) -> None:
-    _Catalog.enabled_names = {"serviceusage.googleapis.com"}
+    _Catalog.enabled_names = set(DEFAULT_APIS) - {STORAGE}
 
     checks = {check.name: check for check in doctor_module.run_checks(_stack(), tmp_path)}
 

@@ -9,6 +9,7 @@ import typer
 
 from python_tofu.core.cli.base import BaseCommand
 from python_tofu.core.cli.options import (
+    AllowServiceAccountsOption,
     BinaryOption,
     ConfigOption,
     FailOnUnknownOption,
@@ -72,6 +73,7 @@ def create_app(provider: Provider) -> typer.Typer:
         ),
         prune: PruneOption = None,
         prune_section: PruneSectionOption = None,
+        allow_service_accounts: AllowServiceAccountsOption = False,
     ) -> None:
         command = BaseCommand(
             make_context(
@@ -87,7 +89,12 @@ def create_app(provider: Provider) -> typer.Typer:
             )
         )
         stack, _ = command.prepare()
-        sections = command.prune_sections(stack, prune, prune_section)
+        sections = command.prune_sections(
+            stack,
+            prune,
+            prune_section,
+            allow_service_accounts=allow_service_accounts,
+        )
         if destroy and sections:
             command.abort("--prune cannot be combined with --destroy")
         runner = command.runner()

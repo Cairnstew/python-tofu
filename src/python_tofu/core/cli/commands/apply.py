@@ -8,6 +8,7 @@ import typer
 
 from python_tofu.core.cli.base import BaseCommand
 from python_tofu.core.cli.options import (
+    AllowServiceAccountsOption,
     BinaryOption,
     ConfigOption,
     FailOnUnknownOption,
@@ -48,6 +49,7 @@ def create_app(provider: Provider) -> typer.Typer:
         var_file: VarFileOption = None,
         prune: PruneOption = None,
         prune_section: PruneSectionOption = None,
+        allow_service_accounts: AllowServiceAccountsOption = False,
     ) -> None:
         command = BaseCommand(
             make_context(
@@ -68,7 +70,12 @@ def create_app(provider: Provider) -> typer.Typer:
         sections: tuple[str, ...] = ()
         if plan_file is None:
             stack, _ = command.prepare()
-            sections = command.prune_sections(stack, prune, prune_section)
+            sections = command.prune_sections(
+                stack,
+                prune,
+                prune_section,
+                allow_service_accounts=allow_service_accounts,
+            )
             command.run_tofu("init")
         else:
             if prune or prune_section:

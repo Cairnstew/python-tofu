@@ -29,6 +29,7 @@ from python_tofu.providers.gcp.quirks import (
     VOLUME_NAME_RE,
     validate_role,
 )
+from python_tofu.providers.gcp.service_names import DEFAULT_APIS
 
 #: Sections the GCP provider can discover and destroy (in safe deletion order).
 GCP_PRUNE_SECTIONS = ("buckets", "subscriptions", "topics", "service_accounts", "apis")
@@ -66,6 +67,23 @@ class GcpProvider(TofuModel):
             "managed outside this stack."
         ),
     )
+    default_apis: tuple[str, ...] = Field(
+        default=DEFAULT_APIS,
+        description=(
+            "Baseline APIs enabled on every owned project and protected from prune. "
+            "Defaults to the control-plane set in providers/gcp/service_names.py; "
+            "add workload APIs here or in `apis` to keep them, or set () to disable "
+            "the baseline. The core control-plane set is never pruned."
+        ),
+    )
+
+    @field_validator("default_apis")
+    @classmethod
+    def _default_apis_are_unique_services(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        cleaned = tuple(dict.fromkeys(item.strip() for item in value))
+        if any(not item for item in cleaned):
+            raise ValueError("default_apis entries must be non-empty service names")
+        return cleaned
 
 
 class GcpProject(TofuModel):
@@ -103,6 +121,13 @@ class ProjectApi(TofuModel):
     project: str
     service: str = Field(min_length=1, description="e.g. compute.googleapis.com")
     disable_on_destroy: bool = False
+    disable_dependent_services: bool = Field(
+        default=False,
+        description=(
+            "When disabling, also disable services that depend on this one. "
+            "Prune sets this so a dependency chain can be removed in one pass."
+        ),
+    )
 
 
 class BillingBudget(TofuModel):

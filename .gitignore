@@ -27,6 +27,7 @@ result-*
 
 # ── IDE / Editor ────────────────────────────────────
 .direnv/
+.cache/
 .vscode/
 .idea/
 .opencode/

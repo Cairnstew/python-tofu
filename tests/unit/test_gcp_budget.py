@@ -45,7 +45,7 @@ def test_budget_renders_alert_only_guardrail() -> None:
     # No notification target: the block is omitted so the provider default
     # (billing administrators) applies. An empty block fails validation.
     assert "all_updates_rule" not in text
-    assert "depends_on = [google_project_service.api_cloudbilling_googleapis_com]" in text
+    assert "depends_on = [google_project_service.api_billingbudgets_googleapis_com]" in text
 
 
 def test_fractional_amount_uses_nanos() -> None:

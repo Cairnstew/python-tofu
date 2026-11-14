@@ -12,7 +12,7 @@ alone: the stack has no mandate to change their API state.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterator
+from typing import TYPE_CHECKING, Iterator, Sequence
 
 from python_tofu.providers.gcp.models import (
     ArtifactRegistryRepository,
@@ -29,36 +29,68 @@ from python_tofu.providers.gcp.models import (
     PubSubTopic,
     ServiceAccount,
     StorageBucket,
+    Volume,
+)
+from python_tofu.providers.gcp.service_names import (
+    ARTIFACT_REGISTRY,
+    BILLING_BUDGETS,
+    CLOUD_ASSET,
+    CLOUD_BILLING,
+    CLOUD_RESOURCE_MANAGER,
+    CLOUD_SQL,
+    CLOUDBUILD,
+    CLOUDFUNCTIONS,
+    DEFAULT_APIS,
+    EVENTARC,
+    IAM,
+    IAM_CREDENTIALS,
+    LOGGING,
+    MONITORING,
+    PROTECTED_APIS,
+    PUBSUB,
+    RUN,
+    SECRET_MANAGER,
+    SERVICE_USAGE,
+    STORAGE,
 )
 
 if TYPE_CHECKING:
     from python_tofu.providers.gcp.stack import GcpStack
 
-SERVICE_USAGE = "serviceusage.googleapis.com"
-CLOUD_RESOURCE_MANAGER = "cloudresourcemanager.googleapis.com"
-IAM = "iam.googleapis.com"
-STORAGE = "storage.googleapis.com"
-ARTIFACT_REGISTRY = "artifactregistry.googleapis.com"
-RUN = "run.googleapis.com"
-CLOUDFUNCTIONS = "cloudfunctions.googleapis.com"
-CLOUDBUILD = "cloudbuild.googleapis.com"
-EVENTARC = "eventarc.googleapis.com"
-PUBSUB = "pubsub.googleapis.com"
-CLOUD_BILLING = "cloudbilling.googleapis.com"
-
 #: Needed to manage ``google_project_service`` itself.
 BASE_APIS: tuple[str, ...] = (SERVICE_USAGE,)
+
+
+def _volume_apis(volumes: Sequence[Volume]) -> list[str]:
+    """APIs a Cloud Run volume mount needs on the service's project."""
+
+    services: list[str] = []
+    for volume in volumes:
+        if volume.gcs is not None:
+            services.append(STORAGE)
+        if volume.cloud_sql is not None:
+            services.append(CLOUD_SQL)
+        if volume.secret is not None:
+            services.append(SECRET_MANAGER)
+    return services
 
 
 def apis_for(stack: "GcpStack", resource: object) -> tuple[str, ...]:
     """Return the API services one declared resource needs."""
 
     if isinstance(resource, GcpProject):
-        return (CLOUD_RESOURCE_MANAGER,)
+        services = [CLOUD_RESOURCE_MANAGER]
+        # Linking a billing account goes through the Cloud Billing API. The
+        # link runs during project creation, before ``google_project_service``,
+        # so a first apply also needs the API enabled on the quota project.
+        if resource.billing_account:
+            services.append(CLOUD_BILLING)
+        return tuple(services)
     if isinstance(resource, BillingBudget):
-        # Budgets live on the billing account, but the API is enabled per
-        # project: use the provider project, which is where ``tofu`` runs.
-        return (CLOUD_BILLING,)
+        # Budgets live on the billing account, but the Budgets API is enabled
+        # per project: use the provider project, which is where ``tofu`` runs.
+        # ``cloudbilling`` is a different API (billing-account metadata).
+        return (BILLING_BUDGETS,)
     if isinstance(resource, ServiceAccount):
         # Role bindings are project IAM members under the hood.
         return (IAM, CLOUD_RESOURCE_MANAGER) if resource.roles else (IAM,)
@@ -73,25 +105,47 @@ def apis_for(stack: "GcpStack", resource: object) -> tuple[str, ...]:
     if isinstance(resource, ArtifactRegistryRepository):
         return (ARTIFACT_REGISTRY,)
     if isinstance(resource, CloudRunService):
-        needs_iam = bool(resource.invoker_service_accounts) or resource.allow_unauthenticated
-        return (RUN, IAM) if needs_iam else (RUN,)
-    if isinstance(resource, (CloudRunJob, CloudRunWorkerPool)):
-        return (RUN,)
+        services = [RUN]
+        if resource.invoker_service_accounts or resource.allow_unauthenticated:
+            services.append(IAM)
+        if resource.secret_env:
+            services.append(SECRET_MANAGER)
+        services.extend(_volume_apis(resource.volumes))
+        return tuple(dict.fromkeys(services))
+    if isinstance(resource, CloudRunJob):
+        services = [RUN]
+        if resource.secret_env:
+            services.append(SECRET_MANAGER)
+        return tuple(dict.fromkeys(services))
+    if isinstance(resource, CloudRunWorkerPool):
+        services = [RUN]
+        if resource.secret_env:
+            services.append(SECRET_MANAGER)
+        services.extend(_volume_apis(resource.volumes))
+        return tuple(dict.fromkeys(services))
     if isinstance(resource, CloudRunFunction):
-        return (
+        services = [
             CLOUDFUNCTIONS,
             CLOUDBUILD,
             RUN,
             EVENTARC,
             ARTIFACT_REGISTRY,
             STORAGE,
-        )
+            # Eventarc delivers events over Pub/Sub and deployment writes logs.
+            PUBSUB,
+            LOGGING,
+        ]
+        if resource.secret_env:
+            services.append(SECRET_MANAGER)
+        return tuple(dict.fromkeys(services))
     if isinstance(resource, PubSubTopic):
         return (PUBSUB,)
     if isinstance(resource, PubSubSubscription):
         services = [PUBSUB]
         if resource.dead_letter is not None or resource.push_service_account is not None:
-            services.append(IAM)
+            # The rendered IAM members resolve the project number with a
+            # ``data.google_project`` block, which reads Cloud Resource Manager.
+            services.extend((IAM, CLOUD_RESOURCE_MANAGER))
         if resource.push_service is not None:
             services.append(RUN)
         return tuple(dict.fromkeys(services))
@@ -148,7 +202,12 @@ def required_apis(stack: "GcpStack") -> dict[str, tuple[str, ...]]:
         if not services:
             continue
         needs.setdefault(project, set()).update(services)
+    if stack.provider.impersonate_service_account:
+        # Impersonation mints tokens with the IAM Service Account Credentials
+        # API, on the project where ``tofu`` runs.
+        needs.setdefault(stack.provider.project, set()).add(IAM_CREDENTIALS)
     for project_services in needs.values():
+        project_services.update(stack.provider.default_apis)
         project_services.update(BASE_APIS)
     return {project: tuple(sorted(values)) for project, values in sorted(needs.items())}
 
@@ -176,14 +235,23 @@ def declared_apis(stack: "GcpStack") -> tuple[ProjectApi, ...]:
 __all__ = [
     "ARTIFACT_REGISTRY",
     "BASE_APIS",
+    "BILLING_BUDGETS",
+    "CLOUD_ASSET",
     "CLOUDBUILD",
     "CLOUD_BILLING",
     "CLOUDFUNCTIONS",
     "CLOUD_RESOURCE_MANAGER",
+    "CLOUD_SQL",
+    "DEFAULT_APIS",
     "EVENTARC",
     "IAM",
+    "IAM_CREDENTIALS",
+    "LOGGING",
+    "MONITORING",
+    "PROTECTED_APIS",
     "PUBSUB",
     "RUN",
+    "SECRET_MANAGER",
     "SERVICE_USAGE",
     "STORAGE",
     "apis_for",

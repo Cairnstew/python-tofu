@@ -115,6 +115,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every consumer after them with `depends_on`, so one apply works into a
   project whose APIs are still disabled. `auto_enable_apis=False` keeps the
   explicit list only.
+- `GcpProvider.default_apis`: a control-plane baseline enabled on every owned
+  project and protected from pruning. Add workload APIs with `default_apis` or
+  `apis`; undeclared APIs become prunable.
+- `PruneConfig.include_service_accounts` plus `--allow-service-accounts`: a
+  two-key gate for pruning service accounts. `PruneConfig(enabled=True)` now
+  selects every section except service accounts, so `apply`/`prune` can clean
+  up stale infrastructure without deleting the identity that runs `tofu`.
+- `ProjectApi(disable_dependent_services=True)`: render the provider's
+  `disable_dependent_services` so an API disable can cascade to dependents;
+  `prune` uses it to remove a project's stale API graph in one pass.
+- `examples/gcp_test_infra/`: a free-tier stack (bucket, object, topic,
+  subscription, service account) with prune enabled, for exercising apply,
+  state, prune and destroy against a real project.
+- Development shell: the default shell now includes `just`, `pre-commit`,
+  `nixpkgs-fmt`, `gh`, `gawk` alongside the locked venv, `uv` and `tofu`; it
+  installs the pre-commit hook on first entry and sets
+  `TOFU_PLUGIN_CACHE_DIR=$REPO_ROOT/.cache/tofu/plugins`. `.#dev` is an alias,
+  `.#bootstrap` is the minimal `uv` shell, and `.#cloud` adds
+  `google-cloud-sdk`.
+- `formatter` output so `nix fmt` works, plus flake checks `lint`,
+  `typecheck`, `unit-tests`, `integration-tests` and `render-test-example`, so
+  `nix flake check` builds every gate CI runs separately.
+- `Justfile` recipes `fmt`, `fmt-nix`, `test-nix`, `coverage`, `audit`,
+  `nix-check-build`, `nix-shell` and `pre-commit`.
 
 ### Changed
 
@@ -136,6 +160,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Billing budgets now enable `billingbudgets.googleapis.com`, the API behind
+  `google_billing_budget`, instead of `cloudbilling.googleapis.com` (which is
+  the separate billing-account metadata API). Cloud Billing is still derived
+  for a `GcpProject` that sets `billing_account`, and both billing APIs are on
+  the prune protect list.
+- API derivation covers the dependencies of the typed fields: Secret Manager
+  for `secret_env` and secret volumes, Cloud SQL Admin for `cloud_sql` volumes,
+  Cloud Storage for GCS volumes, Cloud Resource Manager for the
+  `data.google_project` blocks behind Pub/Sub dead-letter and OIDC push IAM,
+  and Pub/Sub plus Cloud Logging for Cloud Run functions. Provider
+  impersonation enables `iamcredentials.googleapis.com`.
 - The HCL writer aligned every attribute in a block to one column, so an
   attribute that followed a nested block (for example `depends_on` after
   `versioning`) was over-padded and `tofu fmt -check` rejected the rendered

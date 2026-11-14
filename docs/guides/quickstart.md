@@ -19,8 +19,13 @@ secret is readable. Run `direnv allow` once after changing `.envrc`.
 nix develop
 ```
 
-This builds a Nix-managed venv with all dependencies. The `python-tofu` command
-is available directly.
+This builds a Nix-managed venv from `uv.lock` with all dependencies including
+the dev tools (`pytest`, `ruff`, `mypy`), plus `tofu`, `just`, `pre-commit` and
+`nixpkgs-fmt`. The `python-tofu` command is available directly. `direnv` does
+the same on `cd` when it is installed.
+
+For dependency edits use the smaller `nix develop .#bootstrap` shell; for live
+`gcloud` inspection use `nix develop .#cloud`.
 
 ## 2. Inspect the CLI
 
@@ -106,10 +111,11 @@ version.
 ## 6. Run the checks
 
 ```bash
+just check          # lint + typecheck + unit/integration tests + flake eval
 pytest tests/unit -q
 ruff check src tests
 mypy src
-nix flake check --no-build
+nix flake check     # builds lint, typecheck, tests, render and module checks
 ```
 
 ## Next steps

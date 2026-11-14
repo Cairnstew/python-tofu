@@ -107,6 +107,7 @@ summary derived from `tofu show -json`.
 | `--exit-code` | Exit `2` when the plan has changes, `0` when empty, `1` on error |
 | `--prune` | Also list live resources the stack does not declare (preview only) |
 | `--prune-section NAME` | Limit the preview to `buckets`, `subscriptions`, `topics`, `service_accounts` or `apis` (repeatable) |
+| `--allow-service-accounts` | Second gate for listing service accounts (also needs `include_service_accounts=True`) |
 
 ```bash
 python-tofu plan -c infra.py -w .tofu --json
@@ -134,6 +135,7 @@ Render, run `tofu init`, then `tofu apply`.
 | `--var-file PATH` | Pass an extra tfvars file |
 | `--prune` | After applying, delete live resources the stack does not declare |
 | `--prune-section NAME` | Prune only `buckets`, `subscriptions`, `topics`, `service_accounts` or `apis` (repeatable, implies `--prune`) |
+| `--allow-service-accounts` | Second gate for pruning service accounts (also needs `include_service_accounts=True`) |
 
 ### `destroy`
 
@@ -154,20 +156,30 @@ real state backend alone.
 
 Pruning is a **dry run by default**. It only acts when the stack has
 `prune=PruneConfig(enabled=True)` or a section is selected explicitly.
+`enabled=True` selects every supported section. Two exceptions:
+
+- **APIs**: the `GcpProvider.default_apis` control-plane baseline is never
+  pruned; undeclared workload APIs are.
+- **Service accounts**: skipped from `--all` unless the stack sets
+  `prune.include_service_accounts=True` **and** the run passes
+  `--allow-service-accounts`. An explicit `--section service_accounts` fails
+  without both gates. This prevents pruning the identity that runs `tofu`.
 
 ```bash
 python-tofu prune --config infra.py                      # list leftovers
 python-tofu prune --config infra.py --apply              # delete them
 python-tofu prune --config infra.py --section buckets    # one section
 python-tofu prune --config infra.py --section subscriptions --section topics
-python-tofu prune --config infra.py --all --apply        # every supported section
+python-tofu prune --config infra.py --all --apply        # every section except gated SAs
+python-tofu prune --config infra.py --all --apply --allow-service-accounts  # with the SA gate
 python-tofu apply --config infra.py --prune --auto-approve  # apply, then prune
 ```
 
 | Option | Description |
 |--------|-------------|
 | `--section NAME` | Prune one section (repeatable): `buckets`, `subscriptions`, `topics`, `service_accounts`, `apis` |
-| `--all` | Select every supported section |
+| `--all` | Select every supported section except service accounts |
+| `--allow-service-accounts` | Second gate for service accounts; also requires `include_service_accounts=True` |
 | `--apply` | Actually delete; without it the command only lists |
 | `--auto-approve` | Skip the deletion confirmation |
 

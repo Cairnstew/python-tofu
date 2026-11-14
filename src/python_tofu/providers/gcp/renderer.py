@@ -159,6 +159,7 @@ def _api_block(api: ProjectApi) -> Block:
             Attr("project", api.project),
             Attr("service", api.service),
             Attr("disable_on_destroy", api.disable_on_destroy),
+            Attr("disable_dependent_services", api.disable_dependent_services),
         ),
     )
 
