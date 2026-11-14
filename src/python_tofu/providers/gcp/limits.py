@@ -60,7 +60,7 @@ _GCP_FREE_TIER_LIMITS: tuple[Limit, ...] = (
     Limit("gcp.cloud_functions.ghz_seconds", "functions", "GHz-seconds", 200_000),
     Limit("gcp.cloud_functions.egress_gb", "functions", "GB", 5),
     # Firestore (per project)
-    Limit("gcp.firestore.storage_gib", "firestore", "GiB", 1),
+    Limit("gcp.firestore.storage_gib", "firestore", "GiB", 1, LimitPeriod.TOTAL),
     Limit("gcp.firestore.reads_per_day", "firestore", "reads", 50_000, LimitPeriod.DAY),
     Limit("gcp.firestore.writes_per_day", "firestore", "writes", 20_000, LimitPeriod.DAY),
     Limit("gcp.firestore.deletes_per_day", "firestore", "deletes", 20_000, LimitPeriod.DAY),
@@ -86,7 +86,7 @@ _GCP_FREE_TIER_LIMITS: tuple[Limit, ...] = (
     ),
     # Observability
     Limit("gcp.logging.log_gib", "logging", "GiB", 50, description="Per project"),
-    Limit("gcp.monitoring.timeseries_read", "logging", "time series", 1_000_000),
+    Limit("gcp.monitoring.timeseries_read", "monitoring", "time series", 1_000_000),
     # KMS
     Limit("gcp.kms.active_key_versions", "kms", "key versions", 100, description="Autokey only"),
     Limit("gcp.kms.crypto_ops", "kms", "operations", 10_000),
@@ -100,7 +100,7 @@ _GCP_FREE_TIER_LIMITS: tuple[Limit, ...] = (
     Limit("gcp.source_repos.users", "source_repos", "users", 5),
     Limit("gcp.source_repos.storage_gb", "source_repos", "GB", 50),
     Limit("gcp.source_repos.egress_gb", "source_repos", "GB", 50),
-    Limit("gcp.cloud_shell.disk_gb", "cloud_shell", "GB", 5),
+    Limit("gcp.cloud_shell.disk_gb", "cloud_shell", "GB", 5, LimitPeriod.TOTAL),
     # App Engine (daily)
     Limit("gcp.app_engine.f1_hours_per_day", "app_engine", "hours", 28, LimitPeriod.DAY),
     Limit("gcp.app_engine.b1_hours_per_day", "app_engine", "hours", 9, LimitPeriod.DAY),

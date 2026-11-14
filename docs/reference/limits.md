@@ -109,7 +109,7 @@ project. They do not roll over.
 | `gcp.artifact_registry.storage_gb` | artifact_registry | 0.5 GB | month |
 | `gcp.cloud_build.minutes` | cloud_build | 2,500 build-minutes | month |
 | `gcp.logging.log_gib` | logging | 50 GiB (per project) | month |
-| `gcp.monitoring.timeseries_read` | logging | 1,000,000 time series | month |
+| `gcp.monitoring.timeseries_read` | monitoring | 1,000,000 time series | month |
 | `gcp.kms.active_key_versions` | kms | 100 (Autokey) | month |
 | `gcp.kms.crypto_ops` | kms | 10,000 | month |
 | `gcp.workflows.internal_steps` | workflows | 5,000 | month |

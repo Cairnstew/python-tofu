@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from python_tofu.core.limits import LimitPeriod
 from python_tofu.providers.gcp import GCP, GcpProvider, GcpStack, StorageBucket
 from python_tofu.providers.gcp.limits import (
     FREE_STORAGE_LOCATIONS,
@@ -35,6 +36,14 @@ def test_free_tier_catalog_contains_current_headline_limits() -> None:
     }
     for key, amount in expected.items():
         assert GCP_FREE_TIER.get(key).amount == amount
+
+
+def test_total_allowances_and_monitoring_area() -> None:
+    # Firestore storage and Cloud Shell disk are standing allowances, not
+    # monthly resets; Monitoring's time-series read is its own area.
+    assert GCP_FREE_TIER.get("gcp.firestore.storage_gib").period is LimitPeriod.TOTAL
+    assert GCP_FREE_TIER.get("gcp.cloud_shell.disk_gb").period is LimitPeriod.TOTAL
+    assert GCP_FREE_TIER.get("gcp.monitoring.timeseries_read").area == "monitoring"
 
 
 def test_measure_usage_sums_only_free_tier_regions() -> None:
