@@ -41,7 +41,7 @@ route so credentials never enter the Python config.
 | `external_buckets` | `list[str]` | `[]` | Existing buckets objects may target |
 | `external_topics` | `list[str]` | `[]` | Existing Pub/Sub topics subscriptions may target |
 | `required_version` | `str` | `">= 1.6.0"` | OpenTofu version constraint |
-| `google_provider_version` | `str` | `"~> 6.0"` | Google provider constraint |
+| `google_provider_version` | `str` | `"~> 7.0"` | Google provider constraint; Nix builds set it from `nix/provider-versions.nix` via `PYTHON_TOFU_GOOGLE_PROVIDER_VERSION` |
 | `usage_estimates` | `dict[str, float]` | `{}` | Monthly usage per limit key for free-tier checks (see [limits](limits.md)) |
 | `prune` | `PruneConfig` | off | Delete live resources the stack does not declare (see below) |
 | `limits_mode` | `"error" \| "warn" \| "off" \| None` | `None` | Stack-level limit enforcement, used when neither `--limits` nor the policy chooses |

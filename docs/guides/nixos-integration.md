@@ -39,8 +39,40 @@
 }
 ```
 
-The unit is `oneshot`; run `systemctl start python-tofu` after a deploy, or add a
-timer if you want periodic reconciliation.
+The unit is `oneshot`; run `systemctl start python-tofu` after a deploy, or set
+`schedule` for periodic reconciliation.
+
+## Scheduling
+
+```nix
+services.python-tofu = {
+  enable = true;
+  schedule = "hourly";            # systemd OnCalendar expression
+  settings = {
+    command = "plan";
+    config = ./infra.py;
+    stackName = "prod";
+  };
+};
+```
+
+A scheduled unit does not also run at boot: it is pulled in by
+`python-tofu.timer` instead of `multi-user.target`.
+
+## Credentials
+
+Pass a path, never a value:
+
+```nix
+services.python-tofu.environment.GOOGLE_APPLICATION_CREDENTIALS =
+  "/run/agenix/gcloud-auth";
+
+# secret values (tokens, TF_VAR_*) belong in a root-readable file
+services.python-tofu.environmentFile = "/run/agenix/python-tofu.env";
+```
+
+`settings` and `environment` end up world-readable in the Nix store; only paths
+are safe there.
 
 ## Using with Home Manager
 
@@ -52,7 +84,8 @@ timer if you want periodic reconciliation.
 ```
 
 The module output supplies the package from this flake, so the overlay is not
-required for the Home Manager path.
+required for the Home Manager path. The package installs bash, zsh and fish
+completions under `share/`.
 
 ## Using the overlay directly
 
@@ -62,3 +95,15 @@ required for the Home Manager path.
   environment.systemPackages = [ pkgs.python-tofu ];
 }
 ```
+
+## Toolchain
+
+The NixOS module puts `pkgs.opentofu` on the unit's `PATH` by default
+(`tofuPackage`). Override it to pin a specific OpenTofu build:
+
+```nix
+services.python-tofu.tofuPackage = pkgs.opentofu;
+```
+
+`TF_PLUGIN_CACHE_DIR` points at `${settings.workdir}/.tofu-plugins`, so provider
+downloads happen once per working directory rather than on every start.
