@@ -15,6 +15,7 @@
 │   │   ├── limits.py             # Limit/LimitPolicy/Usage/Throttler + reports
 │   │   ├── models.py             # TofuModel, BackendConfig, BaseStack
 │   │   ├── results.py            # RenderResult, PlanSummary, CommandResult
+│   │   ├── toolchain.py          # tofu version/provider mirror/workdir checks
 │   │   ├── loader.py             # load_stack(path, stack_type)
 │   │   ├── provider.py           # Provider contract + registry
 │   │   ├── prune.py              # PrunableResource/PrunePlan + scratch-module Reaper
@@ -123,7 +124,9 @@
 │   │   ├── test_compose.py         # StackPart/compose merging and duplicates
 │   │   ├── test_outputs.py         # Output model, ref(), output block rendering
 │   │   ├── test_stack_isolation.py # Per-stack workdir and state prefix
-│   │   └── test_doctor.py          # Preflight checks with a fake Google API
+│   │   ├── test_doctor.py          # Preflight checks with a fake Google API
+│   │   ├── test_provider_version.py # Provider constraint from Nix/env
+│   │   └── test_toolchain.py       # tofu version, provider mirror, workdir checks
 │   ├── integration/
 │   │   └── test_cli_invocation.py
 │   └── nix_eval/

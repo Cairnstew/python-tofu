@@ -391,7 +391,9 @@
 
           unit-tests = pkgs.runCommand "unit-tests"
             {
-              nativeBuildInputs = [ p.checkVenv ];
+              # `doctor` probes the local OpenTofu binary as part of its
+              # toolchain checks, so the tests need a real one on PATH.
+              nativeBuildInputs = [ p.checkVenv pkgs.opentofu ];
             } ''
             cd ${./.}
             export HOME="$TMPDIR"

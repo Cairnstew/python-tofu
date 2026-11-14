@@ -24,6 +24,7 @@ from python_tofu.core.exceptions import TofuError
 from python_tofu.core.limits import LimitMode, LimitReport, UsageMode
 from python_tofu.core.models import BaseStack
 from python_tofu.core.provider import Provider
+from python_tofu.core.toolchain import run_checks as run_toolchain_checks
 
 _COLORS = {
     CheckStatus.OK: typer.colors.GREEN,
@@ -107,6 +108,19 @@ def create_app(provider: Provider) -> typer.Typer:
         stack = command.load()
 
         results: list[CheckResult] = []
+        try:
+            required = command.ctx.renderer().required_providers(stack)
+        except TofuError:
+            required = {}
+        results.extend(
+            run_toolchain_checks(
+                command.ctx.binary,
+                stack.required_version,
+                required,
+                command.ctx.workdir,
+            )
+        )
+
         if not provider.has_doctor:
             results.append(
                 CheckResult(

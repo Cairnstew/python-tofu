@@ -61,6 +61,7 @@ must be added to its `needs` list or it will not be required.
 | `src/python_tofu/core/provider.py` | `Provider` plugin contract and registry |
 | `src/python_tofu/core/limits.py` | `Limit`/`LimitPolicy`/`Usage`/`Throttler`, reports |
 | `src/python_tofu/core/prune.py` | `PrunableResource`/`PrunePlan` + scratch-module `Reaper` |
+| `src/python_tofu/core/toolchain.py` | `tofu` version, provider mirror/cache and workdir preflight checks |
 | `src/python_tofu/providers/gcp/` | GCP branch: models, `GcpStack`, quirks, renderer, limits, live inventory, parts, plugin |
 | `src/python_tofu/providers/gcp/renderer.py` | GCP stack → files in a workdir |
 | `src/python_tofu/providers/gcp/limits.py` | GCP free-tier policy + usage measurement |
