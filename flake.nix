@@ -133,7 +133,11 @@
         services.python-tofu.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.default;
       };
 
-      homeManagerModules.default = import ./nix/home-module.nix;
+      homeManagerModules.default = { pkgs, ... }: {
+        imports = [ ./nix/home-module.nix ];
+        programs.python-tofu.package =
+          lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+      };
 
       checks = forAllSystems (system:
         let
@@ -213,6 +217,36 @@
               pkgs.writeText "module-eval" (builtins.toJSON settings)
             else
               throw "module-eval: services.python-tofu.settings.extraArgs is not a list";
+
+          # The Home Manager output binds the package from this flake, so
+          # `programs.python-tofu.enable = true` works without the overlay.
+          # Evaluate it here; a bare `import ./nix/home-module.nix` would fall
+          # back to `pkgs.python-tofu` and fail evaluation.
+          home-module-eval =
+            let
+              stub = { lib, ... }: {
+                options.home.packages = lib.mkOption {
+                  type = lib.types.listOf lib.types.package;
+                  default = [ ];
+                };
+              };
+              evaled = lib.evalModules {
+                modules = [
+                  self.homeManagerModules.default
+                  stub
+                  {
+                    _module.args.pkgs = pkgs;
+                    programs.python-tofu.enable = true;
+                  }
+                ];
+              };
+              expected = self.packages.${system}.default;
+              packages = evaled.config.home.packages;
+            in
+            if packages == [ expected ] then
+              pkgs.writeText "home-module-eval" (builtins.toJSON (map (p: p.name) packages))
+            else
+              throw "home-module-eval: programs.python-tofu.package was not defaulted to the flake package";
         }
       );
     };
