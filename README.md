@@ -305,8 +305,9 @@ nix fmt            # format .nix files (nixpkgs-fmt)
 ```
 
 `nix flake check` is the single gate: it builds `lint`, `typecheck`,
-`unit-tests`, `integration-tests`, `format`, the example render checks, and the
-NixOS/Home Manager module evaluations. The shell installs the pre-commit hook on
+`unit-tests`, `integration-tests`, `format`, the example render checks, the
+hermetic `validate-examples` checks, the NixOS/Home Manager module evaluations
+and the module VM test. The shell installs the pre-commit hook on
 first entry; `pre-commit run --all-files` runs the same ruff, mypy and
 `nixpkgs-fmt` hooks over a dirty tree.
 

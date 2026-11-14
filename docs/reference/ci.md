@@ -26,8 +26,10 @@ jobs it changes instead of passing with only the `changes` job.
 
 `nix.yml` runs the full `nix flake check` (which builds the `checks.*`
 derivations: `lint`, `typecheck`, `unit-tests`, `integration-tests`, `format`,
-`render-example`, `render-clean-example`, `render-test-example`, `module-eval`
-and `home-module-eval`) followed by `nix build .#default` — it is the slowest
+`render-example`, `render-clean-example`, `render-test-example`,
+`validate-examples`, `provider-version`, `provider-version-default`,
+`with-tofu-wired`, `module-eval`, `home-module-eval` and `module-vm`) followed
+by `nix build .#default` — it is the slowest
 job, but `nix flake check` locally is now the same gate, using the locked dev
 venv rather than `uv run`.
 

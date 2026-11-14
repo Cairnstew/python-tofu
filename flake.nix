@@ -413,6 +413,67 @@
             touch "$out"
           '';
 
+          # `with-tofu` carries the mirrored provider, so init/validate are
+          # hermetic. The proxies point at a dead address: a registry lookup
+          # fails the check instead of being papered over.
+          validate-examples = pkgs.runCommand "validate-examples"
+            {
+              nativeBuildInputs = [ self.packages.${system}.with-tofu ];
+            } ''
+            export HOME="$TMPDIR"
+            check() {
+              name=$1
+              config=$2
+              workdir="$TMPDIR/$name"
+              python-tofu render --config "$config" --workdir "$workdir" > /dev/null
+              (
+                cd "$workdir"
+                export HTTP_PROXY=http://127.0.0.1:0
+                export HTTPS_PROXY=http://127.0.0.1:0
+                tofu init -backend=false -input=false -no-color > /dev/null
+                tofu validate -no-color
+              )
+            }
+            check bootstrap ${./examples/gcp_bootstrap}/infra.py
+            check clean ${./examples/gcp_clean}/stack.py
+            check test-infra ${./examples/gcp_test_infra}/stack.py
+            touch "$out"
+          '';
+
+          # The module's promise is argv + state directory + PATH. Evaluate-time
+          # tests cover the option shapes; this boots a VM and checks the unit.
+          module-vm = pkgs.testers.nixosTest {
+            name = "python-tofu-module";
+            nodes.machine = { pkgs, ... }: {
+              imports = [ self.nixosModules.default ];
+              services.python-tofu = {
+                enable = true;
+                package = pkgs.writeShellScriptBin "python-tofu" ''
+                  echo "$@" >> /var/lib/python-tofu/invocations
+                  echo "tofu=$(command -v tofu)" >> /var/lib/python-tofu/invocations
+                '';
+                tofuPackage = pkgs.writeShellScriptBin "tofu" ''
+                  echo "OpenTofu v9.9.9"
+                '';
+                settings = {
+                  command = "plan";
+                  config = pkgs.writeText "infra.py" "# fake stack for the VM test\n";
+                  workdir = "/var/lib/python-tofu";
+                  stackName = "prod";
+                  prune = true;
+                };
+              };
+            };
+            testScript = ''
+              machine.wait_for_unit("python-tofu.service")
+              machine.succeed("test -d /var/lib/python-tofu/.tofu-plugins")
+              machine.succeed("grep -q -- '--workdir=/var/lib/python-tofu' /var/lib/python-tofu/invocations")
+              machine.succeed("grep -q -- '--stack-name=prod' /var/lib/python-tofu/invocations")
+              machine.succeed("grep -q -- '--prune' /var/lib/python-tofu/invocations")
+              machine.succeed("grep -q 'tofu=.*/tofu' /var/lib/python-tofu/invocations")
+            '';
+          };
+
           module-eval =
             let
               stub = { lib, ... }: {

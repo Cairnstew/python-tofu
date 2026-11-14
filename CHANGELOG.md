@@ -144,6 +144,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `nix flake check` builds every gate CI runs separately.
 - `Justfile` recipes `fmt`, `fmt-nix`, `test-nix`, `coverage`, `audit`,
   `nix-check-build`, `nix-shell` and `pre-commit`.
+- `checks.validate-examples` renders three examples and runs
+  `tofu init -backend=false` + `tofu validate` against the mirrored provider
+  with the HTTP proxies pointed at a dead address, so provider schema drift
+  fails `nix flake check` instead of a live apply. `checks.module-vm` boots the
+  NixOS module with fake binaries and asserts its argv, PATH and plugin cache.
 - NixOS module parity with the CLI: `settings.command` now accepts `doctor`,
   `prune` and `limits`, and new `settings.stackName`, `settings.limits`,
   `settings.usage`, `settings.varFile` and `settings.prune` map to the flags

@@ -111,7 +111,8 @@ pytest -q         # all tests (unit, integration, nix eval)
 ```
 
 `nix flake check` builds `lint`, `typecheck`, `unit-tests`, `integration-tests`,
-`format`, the example render checks and both module evaluations, using the same
+`format`, the example render checks, `validate-examples` (offline `tofu
+validate`), both module evaluations and the module VM test, using the same
 locked toolchain as the dev shell.
 
 ## Rules for agents
