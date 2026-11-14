@@ -28,6 +28,7 @@
 | `src/python_tofu/core/prune.py` | PrunableResource/PrunePlan and the scratch-module reaper |
 | `src/python_tofu/core/limits.py` | Limit/throttle contract and reports |
 | `src/python_tofu/core/doctor.py` | Preflight check/report contract |
+| `src/python_tofu/core/toolchain.py` | Toolchain checks: tofu version, provider mirror, workdir |
 | `src/python_tofu/providers/gcp/cli/doctor.py` | Live GCP checks and their fixes |
 | `src/python_tofu/core/cli/registry.py` | Command registry, entry-point groups, plugin report |
 | `src/python_tofu/core/runner.py` | New tofu subcommands / flags |

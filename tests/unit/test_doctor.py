@@ -275,7 +275,17 @@ def test_cli_doctor_passes_and_renders_a_checklist(
     result = runner.invoke(cli, ["doctor", "--config", str(config)])
 
     assert result.exit_code == 0, result.output
-    for name in ("credentials", "project", "billing", "APIs", "backend", "state lock"):
+    for name in (
+        "tofu",
+        "providers",
+        "workdir",
+        "credentials",
+        "project",
+        "billing",
+        "APIs",
+        "backend",
+        "state lock",
+    ):
         assert name in result.output
     assert "No blocking problems found." in result.output
 

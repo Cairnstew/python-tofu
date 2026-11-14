@@ -61,19 +61,27 @@ Render, run `tofu init`, then `tofu validate -no-color`.
 
 ### `doctor`
 
-Read-only preflight. Loads the config, mints a token and checks, in order:
+Read-only preflight. Loads the config and checks, in order:
 
-1. credentials resolve and can mint an access token
-2. the provider project exists and is `ACTIVE`
-3. billing is enabled
-4. every API the stack declares or derives is enabled
-5. the state backend is reachable (a GCS bucket read, or a local directory that
+1. `tofu` resolves and its version satisfies the stack's `required_version`
+2. required providers are present in the Nix mirror (`NIX_TERRAFORM_PLUGIN_DIR`)
+   or cache (`TF_PLUGIN_CACHE_DIR`) when either is set; otherwise skipped, since
+   `init` will download them
+3. the working directory is writable or can be created
+4. credentials resolve and can mint an access token
+5. the provider project exists and is `ACTIVE`
+6. billing is enabled
+7. every API the stack declares or derives is enabled
+8. the state backend is reachable (a GCS bucket read, or a local directory that
    exists or can be created)
-6. no GCS state lock object is present
-7. the limits summary (same measurement `plan` uses)
+9. no GCS state lock object is present
+10. the limits summary (same measurement `plan` uses)
 
 ```bash
 python-tofu doctor --config infra.py
+# ✓ tofu         1.12.1 (/nix/store/…/bin/tofu)
+# - providers    no mirror or cache set; tofu downloads providers during init
+# ✓ workdir      .tofu/infra (creatable)
 # ✓ credentials  ci-runner@demo-project.iam.gserviceaccount.com (expires in 59m)
 # ✓ project      demo-project (ACTIVE)
 # ✓ billing      enabled (0123AB-456CDE-789FGH)

@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `StackPart` and `compose()` for multi-file stacks: parts merge in order and
   duplicate addresses fail at build time with both part names. The
   `examples/gcp_clean/` stack now uses them and renders identical HCL.
+- `python-tofu doctor` gains a toolchain group before the GCP checks: the
+  OpenTofu version against `required_version`, required providers in the Nix
+  mirror or cache, and a writable workdir. A missing `tofu` is a hard failure
+  unless `--fail-on-unknown` semantics apply; an unset mirror is skipped
+  because `init` downloads providers.
 - `python-tofu doctor`: a read-only preflight that checks credentials, project
   lifecycle, billing, required APIs, backend reachability, the GCS state lock
   and the limits summary. Each failure prints the command that fixes it;
