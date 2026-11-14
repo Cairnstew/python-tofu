@@ -130,8 +130,10 @@
 │       └── test_module_eval.py
 │
 ├── nix/
-│   ├── default.nix               # mkApplication
-│   ├── module.nix                # NixOS oneshot service
+│   ├── default.nix               # mkApplication + completions + version env
+│   ├── gen-completions.py        # Typer templates → bash/zsh/fish
+│   ├── provider-versions.nix     # Single source for mirrored provider versions
+│   ├── module.nix                # NixOS oneshot service + timer
 │   └── home-module.nix           # home.packages
 │
 ├── docs/

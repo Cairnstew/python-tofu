@@ -49,8 +49,10 @@ must be added to its `needs` list or it will not be required.
 | File | Role |
 |------|------|
 | `flake.nix` | Nix flake — thin orchestrator, delegates to `nix/` |
-| `nix/default.nix` | Package derivation (`mkApplication`) |
-| `nix/module.nix` | NixOS module — oneshot systemd service |
+| `nix/default.nix` | Package derivation (`mkApplication`) + completions + provider-version env |
+| `nix/gen-completions.py` | Generates bash/zsh/fish completions from Typer templates |
+| `nix/provider-versions.nix` | Single source for the provider versions Nix mirrors |
+| `nix/module.nix` | NixOS module — oneshot service, optional timer |
 | `nix/home-module.nix` | Home Manager module — user env package |
 | `pyproject.toml` | Python metadata, dependencies, CLI entry point |
 | `uv.lock` | uv lock file — drives the uv2nix overlay |

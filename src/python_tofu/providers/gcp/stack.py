@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from enum import Enum
 from typing import Any
 
@@ -35,6 +36,20 @@ class StackProfile(str, Enum):
 
     DEFAULT = "default"
     PREVIEW = "preview"
+
+
+#: Fallback provider constraint for installs outside the Nix build.
+DEFAULT_GOOGLE_PROVIDER_VERSION = "~> 7.0"
+
+#: Set by the packaged Nix app from ``nix/provider-versions.nix`` so the
+#: rendered constraint and the mirrored provider version share one owner.
+PROVIDER_VERSION_ENV = "PYTHON_TOFU_GOOGLE_PROVIDER_VERSION"
+
+
+def _default_google_provider_version() -> str:
+    """Return the provider constraint the build provides, else the fallback."""
+
+    return os.environ.get(PROVIDER_VERSION_ENV) or DEFAULT_GOOGLE_PROVIDER_VERSION
 
 
 #: Resources whose ``deletion_protection`` a preview profile flips off.
@@ -96,7 +111,13 @@ class GcpStack(BaseStack):
         default_factory=list,
         description="Existing Pub/Sub topics subscriptions may target without declaring them",
     )
-    google_provider_version: str = "~> 6.0"
+    google_provider_version: str = Field(
+        default_factory=_default_google_provider_version,
+        description=(
+            "Google provider constraint. The packaged Nix app sets "
+            "PYTHON_TOFU_GOOGLE_PROVIDER_VERSION from nix/provider-versions.nix"
+        ),
+    )
     usage_estimates: dict[str, float] = Field(
         default_factory=dict,
         description=(

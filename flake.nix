@@ -37,6 +37,10 @@
 
       workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
 
+      # The Nix build owns the provider/toolchain versions; the packaged app
+      # exports these values and the checks below keep them honest.
+      versions = import ./nix/provider-versions.nix;
+
       overlay = workspace.mkPyprojectOverlay {
         sourcePreference = "wheel";
       };
@@ -228,6 +232,44 @@
         {
           build = pkg;
 
+          # The provider nixpkgs bundles must satisfy the constraint the app
+          # renders. When the weekly flake update moves hashicorp/google out of
+          # range, this check fails instead of a live `tofu init`.
+          provider-version =
+            let
+              constraint = versions.google;
+              mirror = pkgs.opentofu.plugins.hashicorp_google.version;
+              # `~> 7.0` means ">= 7.0, < 8.0": only the major has to match.
+              matched = builtins.match "~> ([0-9]+)\\.([0-9]+)" constraint;
+              expected = if matched == null then null else builtins.elemAt matched 0;
+            in
+            if expected == null then
+              throw "provider-version: unsupported constraint '${constraint}' in nix/provider-versions.nix (use '~> MAJOR.MINOR')"
+            else if lib.versions.major mirror == expected then
+              pkgs.writeText "provider-version" "${mirror} satisfies ${constraint}\n"
+            else
+              throw "provider-version: nixpkgs hashicorp/google ${mirror} does not satisfy '${constraint}' from nix/provider-versions.nix";
+
+          # The Python fallback (used outside Nix) must match the Nix value, so
+          # a `pip install` and a Nix install render the same constraint.
+          provider-version-default =
+            pkgs.runCommand "check-provider-version-default"
+              {
+                nativeBuildInputs = [ p.checkVenv ];
+              }
+              ''
+                got=$(env -u PYTHON_TOFU_GOOGLE_PROVIDER_VERSION python -c '
+                from python_tofu.providers.gcp.models import GcpProvider
+                from python_tofu.providers.gcp.stack import GcpStack
+                print(GcpStack(provider=GcpProvider(project="demo")).google_provider_version)
+                ')
+                if [ "$got" != "${versions.google}" ]; then
+                  echo "FAIL: python default '$got' != '${versions.google}' from nix/provider-versions.nix"
+                  exit 1
+                fi
+                echo "$got" > "$out"
+              '';
+
           venv = p.pythonSet.mkVirtualEnv "app-env" { python-tofu = [ ]; };
 
           format = pkgs.runCommand "check-format"
@@ -334,6 +376,10 @@
             let
               stub = { lib, ... }: {
                 options.systemd.services = lib.mkOption {
+                  type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
+                  default = { };
+                };
+                options.systemd.timers = lib.mkOption {
                   type = lib.types.attrsOf (lib.types.attrsOf lib.types.anything);
                   default = { };
                 };

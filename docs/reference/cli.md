@@ -281,3 +281,8 @@ In this repo, `.envrc` points `GOOGLE_APPLICATION_CREDENTIALS` at the agenix
 
 Set `PYTHON_TOFU_NO_PLUGINS=1` to skip entry-point discovery at startup (useful
 for a deterministic environment or when plugins are not trusted).
+
+The packaged Nix app sets `PYTHON_TOFU_GOOGLE_PROVIDER_VERSION` from
+`nix/provider-versions.nix`, which is what a stack's default
+`google_provider_version` uses. Set it yourself to pin the rendered constraint
+outside Nix; an explicit `GcpStack(google_provider_version=...)` always wins.

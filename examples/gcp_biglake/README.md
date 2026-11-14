@@ -28,10 +28,11 @@ next to `main.tf`.
 
 ## Provider-version note
 
-Provider docs track `main`, but this repo pins `~> 6.0`. The installed 6.50.0
-does **not** accept `serde_info` inside the table's `storage_descriptor`; the
-example omits it. Run `tofu validate` against the rendered workdir before
-applying if you add fields from the online docs.
+Provider docs track `main`, but this repo pins `~> 7.0` (the Nix build mirrors
+the provider nixpkgs ships, currently 7.33.0). The example deliberately omits
+version-specific fields inside the table's `storage_descriptor`; run
+`tofu validate` against the rendered workdir before applying if you add fields
+from the online docs.
 
 ## Querying
 

@@ -139,8 +139,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `nix flake check` builds every gate CI runs separately.
 - `Justfile` recipes `fmt`, `fmt-nix`, `test-nix`, `coverage`, `audit`,
   `nix-check-build`, `nix-shell` and `pre-commit`.
+- NixOS module parity with the CLI: `settings.command` now accepts `doctor`,
+  `prune` and `limits`, and new `settings.stackName`, `settings.limits`,
+  `settings.usage`, `settings.varFile` and `settings.prune` map to the flags
+  each subcommand actually accepts (Typer rejects unknown options, so `limits`
+  no longer receives `--workdir`). `tofuPackage` puts OpenTofu on the unit's
+  `PATH`, `environmentFile` supports secret files, and `schedule` creates a
+  `systemd.timer`. The unit also sets `TF_PLUGIN_CACHE_DIR` under its workdir.
+- The packaged app installs bash, zsh and fish completions under `share/`.
 
 ### Changed
+
+- **The default Google provider constraint is now `~> 7.0`** (was `~> 6.0`),
+  matching the provider nixpkgs mirrors. `nix/provider-versions.nix` is the
+  single source: the packaged app exports it as
+  `PYTHON_TOFU_GOOGLE_PROVIDER_VERSION`, `checks.provider-version` asserts the
+  nixpkgs mirror satisfies it, and a stack that sets
+  `google_provider_version` explicitly is unchanged.
+- `services.python-tofu.settings.workdir` is a string, not a `types.path`: a
+  path literal is copied into the read-only Nix store, which cannot hold state.
 
 - **Default workdir and state prefix are per-stack.** When `--workdir` is
   omitted it is now `.tofu/<stack-name>` (stack name = `--stack-name`, else the
