@@ -32,48 +32,61 @@ jobs:
       - name: Nix build
         run: nix build .#default
 
+      - name: Smoke-test the package
+        run: ./result/bin/python-tofu --version
+
+  dist:
+    needs: detect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/flakehub-cache-action@v3
+
+      - name: Build wheel and sdist
+        run: nix develop .#bootstrap --command uv build
+
+      # The publish and release jobs consume this artifact. Keep it limited to
+      # the distributions: the Nix build output is a wrapper that only works
+      # with the local store, so it must not end up in `dist/`.
       - uses: actions/upload-artifact@v4
         with:
-          name: python-tofu
-          path: result
+          name: dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
 
   publish-pypi:
-    needs: [detect, build]
+    needs: [detect, build, dist]
     if: needs.detect.outputs.has_cli == 'true'
     runs-on: ubuntu-latest
     environment: release
     permissions:
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/download-artifact@v4
         with:
-          name: python-tofu
+          name: dist
           path: dist
-
-      - uses: DeterminateSystems/nix-installer-action@v16
-      - uses: DeterminateSystems/flakehub-cache-action@v3
-
-      - name: Build wheel
-        run: nix develop .#bootstrap --command uv build
 
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           attestations: true
 
   github-release:
-    needs: [detect, build]
+    needs: [detect, build, dist]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: python-tofu
+          name: dist
           path: dist
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/**
+          files: dist/*
           generate_release_notes: true
