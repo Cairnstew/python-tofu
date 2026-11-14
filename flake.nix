@@ -95,6 +95,9 @@
           default = {
             type = "app";
             program = "${self.packages.${system}.default}/bin/python-tofu";
+            meta = {
+              description = "Typed Python DSL and CLI wrapper for OpenTofu on GCP";
+            };
           };
         }
       );
