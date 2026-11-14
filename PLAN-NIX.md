@@ -1,6 +1,6 @@
 # Plan: Nix ↔ python-tofu integration
 
-Status: N1–N2 implemented, N3–N5 planned · Scope: `nix/`, `flake.nix`, `src/python_tofu/` boundaries ·
+Status: N1–N5 implemented · Scope: `nix/`, `flake.nix`, `src/python_tofu/` boundaries ·
 No changes to rendered HCL except where a workstream says so explicitly.
 
 Goal: make the Nix layer a real part of the product, not just a build wrapper.
@@ -153,23 +153,25 @@ provider only contributing the expected provider version.
 
 **Effort.** S · **Risk.** Low (read-only).
 
-## N5 — Hermetic `validate` checks and a VM test (P2)
+## N5 — Hermetic `validate` checks and a VM test (P2, implemented)
 
-**Design.**
+**Design (implemented).**
 
-- With N3, add flake checks that run `tofu init -backend=false` and
-  `tofu validate` for `gcp_bootstrap`, `gcp_clean` and `gcp_test_infra`.
-  This catches schema drift (renamed arguments, bad enum values) at
-  `nix flake check` time rather than during a live apply.
-- Add a `nixosTest` that starts `services.python-tofu` with a fake `tofu`
-  binary and asserts `ExecStart` argv, `StateDirectory` creation, the plugin
-  cache directory, and that a store-path `config` is readable under
-  `ProtectSystem=strict`.
+- `checks.validate-examples` renders three examples and runs
+  `tofu init -backend=false` + `tofu validate` with `with-tofu`; the HTTP
+  proxies point at a dead address, so a registry lookup fails the check.
+  This catches provider schema drift (renamed arguments, bad enum values) at
+  `nix flake check` time instead of during a live apply.
+- `checks.module-vm` is a `testers.nixosTest` that boots the module with a fake
+  `python-tofu` and `tofu`, then asserts the argv it received
+  (`--workdir`, `--stack-name`, `--prune`), that `tofu` resolves from the unit
+  PATH, and that the plugin cache directory exists. It covers the runtime shape
+  the eval-only tests cannot.
 
-**Acceptance.** `nix flake check` builds the validate checks; the VM test runs
-in the sandbox and covers both the boot-time and scheduled unit shapes.
+**Acceptance.** `nix flake check` builds the validate checks and runs the VM
+test; both pass offline.
 
-**Effort.** M · **Risk.** Low.
+**Effort.** M · **Risk.** Low (no live cloud).
 
 ---
 
