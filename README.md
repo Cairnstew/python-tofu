@@ -18,7 +18,8 @@ drive `tofu init/plan/apply/destroy` through one CLI.
   CLI; state, providers and plans remain standard OpenTofu.
 - **Deterministic output** — generated files are stable and `tofu fmt` clean.
 - **Hermetic builds** — the repo is a uv2nix flake; `nix build` produces a
-  self-contained application.
+  self-contained application, and `nix run .#with-tofu` bundles OpenTofu with
+  the mirrored provider for offline `init`/`plan`.
 
 ## Credentials
 

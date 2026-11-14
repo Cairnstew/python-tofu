@@ -107,3 +107,24 @@ services.python-tofu.tofuPackage = pkgs.opentofu;
 
 `TF_PLUGIN_CACHE_DIR` points at `${settings.workdir}/.tofu-plugins`, so provider
 downloads happen once per working directory rather than on every start.
+
+## Self-contained runs
+
+`packages.<system>.with-tofu` bundles the app with an OpenTofu build that
+already contains the mirrored `hashicorp/google` provider
+(`opentofu.withPlugins`), and points the CLI at it through
+`PYTHON_TOFU_BINARY`. `tofu init` then works with no registry access:
+
+```bash
+nix run .#with-tofu -- render --config infra.py --workdir .tofu/demo
+nix run .#with-tofu -- plan   --config infra.py --workdir .tofu/demo
+```
+
+To use the same toolchain in a service, put the bundle on the unit's path:
+
+```nix
+services.python-tofu.tofuPackage = python-tofu.packages.${system}.with-tofu;
+```
+
+Alternatively, keep the default `pkgs.opentofu` and rely on the plugin cache;
+the first start downloads the provider, later starts reuse it.

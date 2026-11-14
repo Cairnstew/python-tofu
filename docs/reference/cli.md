@@ -286,3 +286,7 @@ The packaged Nix app sets `PYTHON_TOFU_GOOGLE_PROVIDER_VERSION` from
 `nix/provider-versions.nix`, which is what a stack's default
 `google_provider_version` uses. Set it yourself to pin the rendered constraint
 outside Nix; an explicit `GcpStack(google_provider_version=...)` always wins.
+
+`PYTHON_TOFU_BINARY` is the environment form of `--binary`. The Nix
+`with-tofu` package sets it to the bundled OpenTofu (which carries the provider
+mirror), so `nix run .#with-tofu -- plan` needs nothing else on `PATH`.

@@ -26,7 +26,14 @@ WorkdirOption = Annotated[
         ),
     ),
 ]
-BinaryOption = Annotated[str, typer.Option("--binary", help="OpenTofu binary to invoke.")]
+BinaryOption = Annotated[
+    str,
+    typer.Option(
+        "--binary",
+        envvar="PYTHON_TOFU_BINARY",
+        help="OpenTofu binary to invoke. Default: $PYTHON_TOFU_BINARY, else tofu.",
+    ),
+]
 VerboseOption = Annotated[bool, typer.Option("--verbose", "-v", help="Print every tofu command.")]
 VarFileOption = Annotated[
     Path | None,
