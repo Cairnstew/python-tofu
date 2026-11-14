@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Iterator
 
 from python_tofu.providers.gcp.models import (
     ArtifactRegistryRepository,
+    BillingBudget,
     BucketObject,
     CloudRunFunction,
     CloudRunJob,
@@ -43,6 +44,7 @@ CLOUDFUNCTIONS = "cloudfunctions.googleapis.com"
 CLOUDBUILD = "cloudbuild.googleapis.com"
 EVENTARC = "eventarc.googleapis.com"
 PUBSUB = "pubsub.googleapis.com"
+CLOUD_BILLING = "cloudbilling.googleapis.com"
 
 #: Needed to manage ``google_project_service`` itself.
 BASE_APIS: tuple[str, ...] = (SERVICE_USAGE,)
@@ -53,6 +55,10 @@ def apis_for(stack: "GcpStack", resource: object) -> tuple[str, ...]:
 
     if isinstance(resource, GcpProject):
         return (CLOUD_RESOURCE_MANAGER,)
+    if isinstance(resource, BillingBudget):
+        # Budgets live on the billing account, but the API is enabled per
+        # project: use the provider project, which is where ``tofu`` runs.
+        return (CLOUD_BILLING,)
     if isinstance(resource, ServiceAccount):
         # Role bindings are project IAM members under the hood.
         return (IAM, CLOUD_RESOURCE_MANAGER) if resource.roles else (IAM,)
@@ -110,6 +116,8 @@ def _resources(stack: "GcpStack") -> Iterator[tuple[str, object]]:
     bucket_projects = {bucket.name: bucket.project for bucket in stack.buckets}
     for item in stack.bucket_objects:
         yield bucket_projects.get(item.bucket, stack.provider.project), item
+    for budget in stack.billing_budgets:
+        yield stack.provider.project, budget
     for binding in stack.iam_members:
         yield binding.project, binding
     for repository in stack.artifact_registry_repositories:
@@ -169,6 +177,7 @@ __all__ = [
     "ARTIFACT_REGISTRY",
     "BASE_APIS",
     "CLOUDBUILD",
+    "CLOUD_BILLING",
     "CLOUDFUNCTIONS",
     "CLOUD_RESOURCE_MANAGER",
     "EVENTARC",

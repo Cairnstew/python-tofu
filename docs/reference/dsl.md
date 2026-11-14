@@ -135,7 +135,12 @@ stack = GcpStack(provider=provider, profile="preview", cloud_run_services=[...])
 Renders `google_billing_budget`: an alert-only guardrail on a billing account.
 Budgets never disable billing by themselves; this model only sets thresholds and
 notification settings. Notifications go to the billing administrators by
-default.
+default. The budget is billing-account scoped, but enabling
+`cloudbilling.googleapis.com` is project scoped, so it is derived on the
+provider project (disable with `GcpProvider(auto_enable_apis=False)`).
+`all_updates_rule` is emitted only when `pubsub_topic` or
+`notification_channels` is set; `disable_default_recipients` requires one of
+them, because an empty rule fails `tofu validate`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -179,6 +184,7 @@ stack = GcpStack(
 
 | Resource | APIs enabled |
 |---|---|
+| billing budget | `cloudbilling` (on the provider project) |
 | bucket / object | `storage` |
 | service account, IAM binding | `iam` (+ `cloudresourcemanager` for role bindings) |
 | Artifact Registry repo | `artifactregistry` |

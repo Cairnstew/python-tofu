@@ -162,6 +162,19 @@ class BillingBudget(TofuModel):
             raise ValueError("billing_account must not be empty")
         return account
 
+    @model_validator(mode="after")
+    def _disabling_defaults_needs_a_target(self) -> "BillingBudget":
+        # The provider rejects an ``all_updates_rule`` without one of
+        # ``pubsub_topic``/``monitoring_notification_channels``; disabling the
+        # default recipients would leave nobody notified anyway.
+        if self.disable_default_recipients and not (
+            self.pubsub_topic or self.notification_channels
+        ):
+            raise ValueError(
+                "disable_default_recipients requires pubsub_topic or notification_channels"
+            )
+        return self
+
     @field_validator("display_name")
     @classmethod
     def _display_name_is_not_blank(cls, value: str) -> str:

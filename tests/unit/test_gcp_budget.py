@@ -42,8 +42,10 @@ def test_budget_renders_alert_only_guardrail() -> None:
     assert "threshold_percent = 0.9" in text
     assert "threshold_percent = 1.0" in text
     assert 'spend_basis = "CURRENT_SPEND"' in text
-    assert "disable_default_iam_recipients = false" in text
-    assert "all_updates_rule" in text
+    # No notification target: the block is omitted so the provider default
+    # (billing administrators) applies. An empty block fails validation.
+    assert "all_updates_rule" not in text
+    assert "depends_on = [google_project_service.api_cloudbilling_googleapis_com]" in text
 
 
 def test_fractional_amount_uses_nanos() -> None:
@@ -77,9 +79,15 @@ def test_notification_settings_render() -> None:
         )
     )
 
+    assert "all_updates_rule" in text
     assert 'pubsub_topic = "projects/demo-project/topics/budget"' in text
     assert "monitoring_notification_channels" in text
     assert "disable_default_iam_recipients = true" in text
+
+
+def test_disabling_default_recipients_needs_a_target() -> None:
+    with pytest.raises(ValidationError, match="disable_default_recipients"):
+        _budget(disable_default_recipients=True)
 
 
 def test_billing_account_prefix_is_stripped() -> None:

@@ -129,16 +129,23 @@ def _billing_budget_block(budget: BillingBudget) -> Block:
                 )
                 for threshold in budget.thresholds
             ),
-            Block(
-                "all_updates_rule",
-                body=body(
-                    attr("pubsub_topic", budget.pubsub_topic),
-                    attr(
-                        "monitoring_notification_channels",
-                        list(budget.notification_channels) or None,
+            # The provider rejects an empty ``all_updates_rule``: it requires a
+            # Pub/Sub topic or a notification channel. Omitting the block keeps
+            # the default (billing administrators) recipients.
+            (
+                Block(
+                    "all_updates_rule",
+                    body=body(
+                        attr("pubsub_topic", budget.pubsub_topic),
+                        attr(
+                            "monitoring_notification_channels",
+                            list(budget.notification_channels) or None,
+                        ),
+                        Attr("disable_default_iam_recipients", budget.disable_default_recipients),
                     ),
-                    Attr("disable_default_iam_recipients", budget.disable_default_recipients),
-                ),
+                )
+                if budget.pubsub_topic or budget.notification_channels
+                else None
             ),
         ),
     )
@@ -975,7 +982,14 @@ class GcpRenderer(BaseRenderer[GcpStack]):
         for budget in stack.billing_budgets:
             address = f"google_billing_budget.budget_{slug(budget.display_name)}"
             require_unique(seen, address, f"billing budget {budget.display_name!r}")
-            blocks.append(_billing_budget_block(budget))
+            blocks.append(
+                _with_api_deps(
+                    _billing_budget_block(budget),
+                    stack,
+                    stack.provider.project,
+                    budget,
+                )
+            )
 
         for api in declared_apis(stack):
             address = f"google_project_service.api_{slug(api.service)}"

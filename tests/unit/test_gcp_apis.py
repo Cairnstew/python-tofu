@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from python_tofu.providers.gcp import (
+    BillingBudget,
     CloudRunService,
     GcpProvider,
     GcpStack,
@@ -15,6 +16,7 @@ from python_tofu.providers.gcp import (
 from python_tofu.providers.gcp import prune as gcp_prune
 from python_tofu.providers.gcp.apis import (
     ARTIFACT_REGISTRY,
+    CLOUD_BILLING,
     CLOUD_RESOURCE_MANAGER,
     IAM,
     PUBSUB,
@@ -80,6 +82,21 @@ def test_required_apis_follow_resource_kinds() -> None:
     assert required_apis(stack) == {
         PROJECT: tuple(sorted([SERVICE_USAGE, STORAGE, IAM, RUN, PUBSUB]))
     }
+
+
+def test_billing_budget_needs_cloud_billing() -> None:
+    budget = BillingBudget(
+        billing_account="01ABCD-EFGH23-456789",
+        display_name="guardrail",
+        amount=5,
+    )
+    stack = _stack(billing_budgets=[budget])
+
+    assert required_apis(stack) == {PROJECT: tuple(sorted([CLOUD_BILLING, SERVICE_USAGE]))}
+
+    text = _main(stack)
+    assert 'resource "google_project_service" "api_cloudbilling_googleapis_com"' in text
+    assert "depends_on = [google_project_service.api_cloudbilling_googleapis_com]" in text
 
 
 def test_subscription_without_push_does_not_need_run() -> None:
