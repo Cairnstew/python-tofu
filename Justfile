@@ -1,7 +1,7 @@
 default:
     @just --list
 
-check: lint typecheck test-unit nix-check
+check: lint typecheck test-unit test-integration nix-check
 
 lint:
     ruff check src/ tests/

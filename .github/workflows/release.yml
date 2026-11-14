@@ -3,6 +3,8 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Dry run: build the package and the distributions without publishing.
+  workflow_dispatch:
 
 jobs:
   detect:
@@ -60,7 +62,7 @@ jobs:
 
   publish-pypi:
     needs: [detect, build, dist]
-    if: needs.detect.outputs.has_cli == 'true'
+    if: github.event_name == 'push' && needs.detect.outputs.has_cli == 'true'
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -77,6 +79,7 @@ jobs:
 
   github-release:
     needs: [detect, build, dist]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write

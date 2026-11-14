@@ -11,7 +11,6 @@ jobs:
     outputs:
       python: ${{ steps.filter.outputs.python }}
       nix:    ${{ steps.filter.outputs.nix }}
-      docs:   ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,10 +36,6 @@ jobs:
               - 'examples/**'
               - 'pyproject.toml'
               - 'uv.lock'
-              - '.github/workflows/**'
-            docs:
-              - 'docs/**'
-              - '*.md'
               - '.github/workflows/**'
 
   lint:

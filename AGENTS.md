@@ -20,7 +20,7 @@ derivations via pure Nix code and the repo builds with `nix build .#default`.
 | Remote | `origin` → `github.com/Cairnstew/python-tofu` (public) |
 | Default branch | `main` |
 | CI entry point | `.github/workflows/ci.yml` — the only `push`/`pull_request` workflow |
-| Local equivalent | `just check` (lint + typecheck + unit tests + `nix flake check --no-build`) |
+| Local equivalent | `just check` (lint + typecheck + unit/integration tests + `nix flake check --no-build`) |
 
 Every other workflow is `workflow_call` only and is invoked by `ci.yml`. CI
 triggers on pushes to `main` and on pull requests, so work on a branch needs a
@@ -91,7 +91,7 @@ nix build .#default
 ### Run checks
 
 ```bash
-just check        # lint + typecheck + unit tests + flake eval
+just check        # lint + typecheck + unit/integration tests + flake eval
 pytest -q         # all tests (unit, integration, nix eval)
 ```
 

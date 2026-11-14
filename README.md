@@ -273,7 +273,7 @@ See the [CI reference](docs/reference/ci.md) for the per-workflow job table.
 ## Development
 
 ```bash
-just check      # lint + typecheck + unit tests + flake evaluation
+just check      # lint + typecheck + unit/integration tests + flake evaluation
 just test       # all tests
 just nix-build  # build the application
 ```
