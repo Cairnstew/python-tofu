@@ -51,6 +51,9 @@ timer if you want periodic reconciliation.
 }
 ```
 
+The module output supplies the package from this flake, so the overlay is not
+required for the Home Manager path.
+
 ## Using the overlay directly
 
 ```nix

@@ -48,6 +48,9 @@
 │   │       ├── quirks.py         # GCP regexes, role rules, slug, uniqueness
 │   │       ├── limits.py         # GCP_FREE_TIER policy + usage measurement
 │   │       ├── live.py           # Cloud Asset Inventory live measurement
+│   │       ├── apis.py           # APIs per resource + depends_on ordering
+│   │       ├── services.py       # Service Usage catalog + name resolution
+│   │       ├── prune.py          # Live discovery of undeclared resources
 │   │       ├── renderer.py       # GcpRenderer(BaseRenderer[GcpStack])
 │   │       ├── parts.py          # StackPart + compose() for multi-file stacks
 │   │       ├── provider.py       # GCP Provider instance
@@ -85,9 +88,12 @@
 │   ├── gcp_apis/
 │   │   ├── stack.py              # Service Usage-validated API enablement
 │   │   └── README.md
-│   └── gcp_clean/
-│       ├── stack.py              # Wires the parts together
-│       └── parts/                # foundation / storage / iam
+│   ├── gcp_clean/
+│   │   ├── stack.py              # Wires the parts together
+│   │   └── parts/                # foundation / storage / iam
+│   └── gcp_pubsub/
+│       ├── stack.py              # Topic/subscription, push + dead letter
+│       └── README.md
 │
 ├── tests/
 │   ├── conftest.py               # src on sys.path, sample stack, fake tofu
@@ -98,14 +104,23 @@
 │   │   ├── test_renderer.py
 │   │   ├── test_runner.py
 │   │   ├── test_loader.py
+│   │   ├── test_limits.py          # core Limit/Usage/Throttler arithmetic
 │   │   ├── test_cli.py
-│   │   ├── test_cli_registry.py  # Registry, custom commands, plugin discovery
-│   │   ├── test_gcp_budget.py     # BillingBudget validation and HCL
-│   │   ├── test_stack_profile.py  # preview profile + stack limits_mode
-│   │   ├── test_compose.py        # StackPart/compose merging and duplicates
-│   │   ├── test_outputs.py       # Output model, ref(), output block rendering
+│   │   ├── test_cli_registry.py    # Registry, custom commands, plugin discovery
+│   │   ├── test_gcp_apis.py        # Derived APIs and depends_on ordering
+│   │   ├── test_gcp_budget.py      # BillingBudget validation and HCL
+│   │   ├── test_gcp_cloud_run.py   # Services, functions, jobs, worker pools
+│   │   ├── test_gcp_limits.py      # Free-tier catalog, measurement, aggregates
+│   │   ├── test_gcp_live.py        # Cloud Asset Inventory parsing and rules
+│   │   ├── test_gcp_objects.py     # BucketObject validation and HCL
+│   │   ├── test_gcp_pubsub.py      # Topics, subscriptions, push, dead letters
+│   │   ├── test_gcp_services.py    # Service Usage catalog and resolution
+│   │   ├── test_prune.py           # Live discovery and scratch-module reaper
+│   │   ├── test_stack_profile.py   # preview profile + stack limits_mode
+│   │   ├── test_compose.py         # StackPart/compose merging and duplicates
+│   │   ├── test_outputs.py         # Output model, ref(), output block rendering
 │   │   ├── test_stack_isolation.py # Per-stack workdir and state prefix
-│   │   └── test_doctor.py        # Preflight checks with a fake Google API
+│   │   └── test_doctor.py          # Preflight checks with a fake Google API
 │   ├── integration/
 │   │   └── test_cli_invocation.py
 │   └── nix_eval/
@@ -132,7 +147,6 @@
 ├── flake.lock
 ├── pyproject.toml
 ├── uv.lock
-├── uv.lock.example
 ├── Justfile
 ├── .pre-commit-config.yaml
 ├── .envrc

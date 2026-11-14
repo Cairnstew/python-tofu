@@ -53,4 +53,6 @@ Do not put secret values in `settings`; they are world-readable Nix store data.
 programs.python-tofu.enable = true;
 ```
 
-This only adds the package to `home.packages`.
+The flake's `homeManagerModules.default` defaults `programs.python-tofu.package`
+to the flake package, so no overlay is needed. This only adds the package to
+`home.packages`.

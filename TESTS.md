@@ -12,9 +12,15 @@ tests/
 │   ├── test_hcl.py        #   Writer: escaping, collections, Raw, alignment
 │   ├── test_models.py     #   Pydantic validation and cross-references
 │   ├── test_limits.py     #   Core Limit/Usage/Throttler arithmetic and reports
+│   ├── test_gcp_apis.py   #   Derived API sets and depends_on ordering
+│   ├── test_gcp_budget.py #   BillingBudget validation and rendering
+│   ├── test_gcp_cloud_run.py # Services, functions, jobs, worker pools
 │   ├── test_gcp_limits.py #   Free-tier catalog, measurement, aggregates
 │   ├── test_gcp_live.py   #   Cloud Asset Inventory parsing and free-tier rules
 │   ├── test_gcp_objects.py #  BucketObject validation and HCL shapes
+│   ├── test_gcp_pubsub.py #   Topics, subscriptions, push and dead letters
+│   ├── test_gcp_services.py # Service Usage catalog, resolution and throttling
+│   ├── test_prune.py      #   Live discovery and scratch-module reaper
 │   ├── test_provider_plugin.py # Registry + core renderer with a non-GCP provider
 │   ├── test_renderer.py   #   Golden-style HCL assertions, duplicates, backends
 │   ├── test_runner.py     #   Command construction, JSON parsing, errors
@@ -22,7 +28,6 @@ tests/
 │   ├── test_cli.py        #   Typer CliRunner + fake tofu binary
 │   ├── test_cli_registry.py # Command registry, aliases, plugin discovery
 │   ├── test_outputs.py    #   Output/ref rendering and validation
-│   ├── test_gcp_budget.py #   BillingBudget validation and rendering
 │   ├── test_stack_profile.py # preview profile and stack limits_mode
 │   ├── test_compose.py    #   StackPart/compose merging and duplicates
 │   ├── test_stack_isolation.py # Default workdir and GCS prefix per stack
@@ -70,8 +75,13 @@ pytest tests/                 # everything
 | `core/limits.py` | `unit/` | Usage arithmetic, exceeded/warn/unknown actions, aggregates, enforcement |
 | `providers/gcp/limits.py` | `unit/` | Free-tier amounts, region filtering, estimate merging |
 | `providers/gcp/live.py` | `unit/` | CAI pagination, region/type rules, live-over-stack override |
+| `providers/gcp/apis.py` | `unit/` | Derived API sets, `depends_on` ordering, external projects |
+| `providers/gcp/services.py` | `unit/` | Service Usage parsing, 429/404 handling, name resolution |
+| `providers/gcp/prune.py`, `core/prune.py` | `unit/` | Discovery rules, protected resources, scratch-module plan |
 | `providers/gcp/models.py` (`BucketObject`) | `unit/` | Source exclusivity, key rules, bucket references |
+| `providers/gcp/models.py` (Pub/Sub, Cloud Run, budget) | `unit/` | Validation and import-time errors |
 | `providers/gcp/renderer.py` (`BucketObject`) | `unit/` | Inline/source/URL blocks, bytes materialisation, http provider |
+| `providers/gcp/renderer.py` (Pub/Sub, Cloud Run, budget) | `unit/` | HCL shapes, ordering and API dependencies |
 | `core/renderer.py` | `unit/` | Managed-file contract via a minimal non-GCP renderer |
 | `providers/gcp/models.py` | `unit/` | Instantiate Pydantic models; assert validation errors |
 | `providers/gcp/renderer.py` | `unit/` | Render a sample stack and assert HCL fragments; duplicate errors |

@@ -6,6 +6,7 @@
 |------|-----------|
 | `src/python_tofu/providers/gcp/models.py` | New GCP resource types and fields |
 | `src/python_tofu/providers/gcp/renderer.py` | New resource → HCL mappings |
+| `src/python_tofu/providers/gcp/apis.py` | APIs and `depends_on` edges per new resource |
 | `src/python_tofu/core/cli/commands/` | New commands and options |
 | `examples/gcp_bootstrap/infra.py` | Living example / integration surface |
 | `.github/workflows/ci.yml` | Path filters |
@@ -21,6 +22,10 @@
 | `src/python_tofu/providers/gcp/quirks.py` | GCP identifier/role/naming rules |
 | `src/python_tofu/providers/gcp/limits.py` | Free-tier amounts and measurement |
 | `src/python_tofu/providers/gcp/live.py` | Cloud Asset Inventory measurement and rules |
+| `src/python_tofu/providers/gcp/services.py` | Service Usage catalog, resolution and quota handling |
+| `src/python_tofu/providers/gcp/prune.py` | Live discovery and protection rules |
+| `src/python_tofu/providers/gcp/cli/apis.py` | `python-tofu apis` command surface |
+| `src/python_tofu/core/prune.py` | PrunableResource/PrunePlan and the scratch-module reaper |
 | `src/python_tofu/core/limits.py` | Limit/throttle contract and reports |
 | `src/python_tofu/core/doctor.py` | Preflight check/report contract |
 | `src/python_tofu/providers/gcp/cli/doctor.py` | Live GCP checks and their fixes |

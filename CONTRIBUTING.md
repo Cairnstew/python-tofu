@@ -36,20 +36,31 @@ just check
 
 ## Adding a GCP resource
 
-1. Add a frozen model in `src/python_tofu/models/gcp.py`
-2. Wire it into `GcpStack` in `models/stack.py` (including reference validation)
-3. Add a block builder in `services/renderer.py`
-4. Add the resource to `examples/gcp_bootstrap/infra.py` if it fits the example
-5. Add unit tests for the model and rendered HCL
-6. Document the fields in `docs/reference/dsl.md`
+1. Add a frozen model in `src/python_tofu/providers/gcp/models.py`
+2. Wire it into `GcpStack` in `src/python_tofu/providers/gcp/stack.py`
+   (including any cross-reference validation)
+3. Add a block builder in `src/python_tofu/providers/gcp/renderer.py`
+4. Declare the APIs it needs and the `depends_on` ordering in
+   `src/python_tofu/providers/gcp/apis.py`
+5. Put identifier/naming rules in `src/python_tofu/providers/gcp/quirks.py`
+6. Add the resource to an example if it fits
+7. Add unit tests for the model and rendered HCL
+8. Document the fields in `docs/reference/dsl.md` and add a `CHANGELOG.md` entry
+
+`src/python_tofu/models/`, `services/`, `hcl.py` and `loader.py` are
+compatibility shims; do not add new code there (see `GOTCHAS.md`).
 
 ## Adding a CLI command
 
-1. Create `src/python_tofu/cli/commands/<name>.py` with a Typer sub-app
-2. Use the shared options from `cli/options.py`
-3. Register it in `cli/main.py`
-4. Add tests in `tests/unit/test_cli.py`
-5. Document it in `docs/reference/cli.md`
+1. Create `src/python_tofu/core/cli/commands/<name>.py` exporting
+   `create_app(provider) -> typer.Typer`
+2. Use the shared options from `src/python_tofu/core/cli/options.py`
+3. Register it in `_BUILTINS` in
+   `src/python_tofu/core/cli/commands/__init__.py` (or decorate the factory with
+   `register_command`)
+4. Put provider-specific commands under `src/python_tofu/providers/<name>/cli/`
+5. Add tests under `tests/unit/`
+6. Document it in `docs/reference/cli.md`
 
 ## Adding a NixOS module option
 

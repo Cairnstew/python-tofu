@@ -1,7 +1,7 @@
 # Plan: seamless `plan` / `apply`
 
-Status: proposed · Scope: `python-tofu` core + GCP provider · No breaking changes to
-existing stack files.
+Status: implemented (workstreams 1–7 shipped; see `CHANGELOG.md`) · Scope:
+`python-tofu` core + GCP provider · No breaking changes to existing stack files.
 
 Goal: make the common loop — `plan`, review, `apply`, read results — work on a
 fresh project, from any directory, with no unexplained 403s and no chance of
@@ -297,11 +297,9 @@ Each milestone ships with: unit tests, a live check where it touches GCP, docs
 - Destroy everything at the end; leave APIs in the state they were found in.
 - Record observed quirks in `GOTCHAS.md` before closing the workstream.
 
-## Open questions
+## Open questions (resolved)
 
-1. Should `doctor` be able to *fix* (enable APIs, create backend bucket), or stay
-   read-only with printed commands? Proposal: read-only in M3, revisit later.
-2. Should outputs be usable as inputs to another stack automatically (a
-   `remote_state` data source), or remain copy-paste via `external_*`?
-3. Is a stack-level `name_prefix` wanted at all, given the reference-resolution
-   risks? Proposal: no for now.
+1. `doctor` stays read-only and prints the fixing command; nothing is enabled or
+   created implicitly.
+2. Outputs are copy-paste via `external_*`; no `remote_state` data source.
+3. No stack-level `name_prefix`; resources keep explicit names.
