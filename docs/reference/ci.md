@@ -6,7 +6,7 @@
 |------|-------|
 | Remote | `https://github.com/Cairnstew/python-tofu` (public) |
 | Default branch | `main` |
-| Entry point | `ci.yml` — the only workflow with a `push`/`pull_request` trigger |
+| Entry point | `ci.yml` — the only workflow triggered by branch pushes and pull requests |
 | Reusable workflows | `lint`, `typecheck`, `test-unit`, `test-integration`, `nix`, `audit` (`workflow_call` only) |
 | Required secrets | none — `GITHUB_TOKEN` and OIDC only |
 
