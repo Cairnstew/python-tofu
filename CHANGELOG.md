@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   free-form and cross-reference fields (`BucketObject.bucket`,
   `PubSubSubscription.topic`, IAM principals, service accounts, secrets).
   Identity fields that become HCL labels reject them with a targeted error.
+- Nix bucket objects accept inline `content` (text generated with
+  `builtins.toJSON`/`readFile`) and `source` as a derivation or Nix path
+  literal, serialised to its store path. Documented the data-vs-derivation and
+  bucket-versioning trade-offs in `docs/reference/nix-stacks.md`.
 - Flake checks: `stack-eval` and `render-nix-example` (a Nix-authored stack
   must render byte-for-byte like the Python example), plus the Nix stack in
   `validate-examples`.

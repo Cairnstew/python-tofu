@@ -140,6 +140,112 @@ Identity fields that become HCL labels (`buckets.*.name`, `*.project_id`,
 Python validation rejects an interpolation there with a message explaining
 that the computed part belongs in an attribute or an `output`.
 
+## Bucket objects and versioning
+
+`BucketObject` has exactly one content source, and the Nix surface accepts the
+same fields as the Python model:
+
+```nix
+let
+  release = { version = "1.4.0"; channel = "stable"; };
+  app = pkgs.writeText "app.js" ''console.log("hello");'';
+in
+{
+  buckets.artifacts = {
+    project = "my-project";
+    location = "EU";
+    versioning = true;
+  };
+
+  bucket_objects = {
+    # Text generated in Nix: inline `content`, no derivation.
+    "config/release.json" = {
+      bucket = "artifacts";
+      content = builtins.toJSON release;
+      content_type = "application/json";
+      cache_control = "no-store";
+    };
+
+    # A build artifact or binary: pass its store path as `source`.
+    "dist/app.js" = {
+      bucket = "artifacts";
+      source = "${app}";
+      content_type = "application/javascript";
+    };
+
+    # A local file: a Nix path literal is copied into the store as well.
+    "assets/logo.png" = {
+      bucket = "artifacts";
+      source = ./logo.png;
+      content_type = "image/png";
+    };
+  };
+}
+```
+
+`content = builtins.readFile ./config.json;` is the pure way to inline a file
+that already exists in the tree. `source = "${drv}";` (or `source = drv;`, which
+Nix serialises as its out path) is the way to pass a derivation; `source =
+./path` is accepted too.
+
+A path literal inside a flake is already a store path. If the declaration lives
+outside a flake, wrap it in `builtins.path` so the service can read it and it
+becomes part of the system closure:
+
+```nix
+source = builtins.path { path = ./logo.png; name = "logo.png"; };
+```
+
+### Data or derivation?
+
+| Content | Use | Why |
+|---|---|---|
+| Small text, JSON/YAML, generated config | `content` | Self-contained in the stack JSON, diffable, no store path |
+| Binary, tarball, compiled asset, large file | `source` (derivation/store path) | Nix strings are text; binaries belong in the store |
+| Remote/mutable URL | `source_url` | Terraform fetches at plan/apply; not hermetic |
+
+Passing the derivation is the better default for artifacts: the file is built
+hermetically, the stack JSON stays small, and OpenTofu hashes the file at
+`source` so an unchanged file is a no-op. Its downside is that a store path can
+change when unrelated derivation inputs change (for example a nixpkgs update)
+even when the bytes are identical, which causes a re-upload. If that matters,
+use a content-addressed path (`builtins.path`, `builtins.toFile`, or a
+fixed-output derivation) or inline the bytes with `content` when they are
+text.
+
+### Versioning
+
+Terraform identifies `google_storage_bucket_object` by object name and compares
+the declared content/file hash with state. There are two useful patterns:
+
+- **Same name + bucket versioning** — set `StorageBucket.versioning = true` and
+  keep the object key stable. A content change updates the live object and GCS
+  retains the previous generation.
+- **Content-addressed name** — put a hash/version in the key, e.g.
+  `"dist/app-${builtins.substring 0 12 (builtins.hashString "sha256" appText)}.js"`.
+  Every version is a distinct object. Note that `prune` does not include bucket
+  objects (`GCP_PRUNE_SECTIONS` covers buckets, subscriptions, topics, service
+  accounts and APIs), so old keys accumulate; use a GCS lifecycle rule to
+  expire them.
+
+For a directory of assets:
+
+```nix
+bucket_objects = lib.mapAttrs'
+  (name: _type: lib.nameValuePair "assets/${name}" {
+    bucket = "artifacts";
+    source = builtins.path {
+      path = ./assets/${name};
+      name = builtins.baseNameOf name;
+    };
+  })
+  (lib.filterAttrs (_: type: type == "regular") (builtins.readDir ./assets));
+```
+
+`source` is resolved to an absolute path at render time, so a store path is
+what you want; a bare relative string would resolve against the process working
+directory instead of the config file.
+
 ## Evaluate without NixOS
 
 ```nix

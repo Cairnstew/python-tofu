@@ -36,6 +36,8 @@ let
 
   # A JSON-compatible value. Same shape Terranix uses, minus the
   # __functor/__toString block magic: values here are data, never references.
+  # `path` is accepted so a bucket object can point at `./dist/app.js`;
+  # `builtins.toJSON` serialises both paths and derivations as their out path.
   valueType =
     with types;
     nullOr (oneOf [
@@ -43,6 +45,7 @@ let
       int
       float
       str
+      path
       (attrsOf valueType)
       (listOf valueType)
     ]);
