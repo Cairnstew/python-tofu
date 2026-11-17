@@ -13,7 +13,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from python_tofu.core.exceptions import RenderError
-from python_tofu.core.hcl import Attr, Block, Raw, attr, body
+from python_tofu.core.hcl import Attr, Block, Raw, attr, body, is_reference_template
 from python_tofu.core.renderer import BaseRenderer
 from python_tofu.core.results import RenderResult
 from python_tofu.providers.gcp.apis import apis_for, declared_apis
@@ -269,8 +269,8 @@ def _env_blocks(env: dict[str, str], secret_env: dict[str, SecretEnv]) -> list[B
 def _service_account_value(stack: "GcpStack", value: str | None) -> str | Raw | None:
     """Reference a declared service account so ordering is implicit."""
 
-    if value is None:
-        return None
+    if value is None or is_reference_template(value):
+        return value
     for account in stack.service_accounts:
         email = f"{account.account_id}@{account.project}.iam.gserviceaccount.com"
         if value in (account.account_id, email):
@@ -464,6 +464,10 @@ def _worker_pool_block(pool: CloudRunWorkerPool, stack: "GcpStack") -> Block:
 def _topic_ref(stack: "GcpStack", value: str, project: str) -> str | Raw:
     """Resolve a declared topic to its resource, otherwise build a full path."""
 
+    if is_reference_template(value):
+        # The author already wrote the interpolation; emitting a resource path
+        # would replace it with a literal and break the dependency.
+        return value
     name = value.rsplit("/", 1)[-1]
     prefix = f"projects/{project}/"
     if value.startswith("projects/") and not value.startswith(prefix):
@@ -476,6 +480,8 @@ def _topic_ref(stack: "GcpStack", value: str, project: str) -> str | Raw:
 
 
 def _iam_member_value(stack: "GcpStack", value: str) -> str | Raw:
+    if is_reference_template(value):
+        return value
     for account in stack.service_accounts:
         email = f"{account.account_id}@{account.project}.iam.gserviceaccount.com"
         if value in (account.account_id, email):
@@ -616,6 +622,8 @@ def _dead_letter_iam_block(subscription: PubSubSubscription, stack: "GcpStack") 
 def _service_account_name_ref(stack: "GcpStack", value: str) -> str | Raw:
     """Full ``projects/.../serviceAccounts/...`` name for an IAM member target."""
 
+    if is_reference_template(value):
+        return value
     for account in stack.service_accounts:
         email = f"{account.account_id}@{account.project}.iam.gserviceaccount.com"
         if value in (account.account_id, email):
@@ -1235,6 +1243,8 @@ class GcpRenderer(BaseRenderer[GcpStack]):
     def _bucket_reference(self, bucket: str, stack: GcpStack) -> Attr:
         """Reference a declared bucket so objects wait for it; literals for external ones."""
 
+        if is_reference_template(bucket):
+            return Attr("bucket", bucket)
         for declared in stack.buckets:
             if declared.name == bucket:
                 return Attr(

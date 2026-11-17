@@ -13,17 +13,21 @@ or boot-time reconciliation, not for storing credentials in the Nix store.
 | `enable` | bool | false | Enable the service |
 | `package` | package | `pkgs.python-tofu` | python-tofu package to invoke |
 | `tofuPackage` | package | `pkgs.opentofu` | OpenTofu package placed on the unit's `PATH` |
+| `nixPackage` | package | `pkgs.nix` | Placed on the unit's `PATH` only when `settings.config` is a `.nix` file |
+| `stack` | attrs or null | `null` | Cloud stack declared in Nix (see below); evaluated at build time |
+| `stackFile` | path or null | `null` | Nix module declaring the stack; evaluated at build time |
 | `environment` | attrs of str | `{}` | Environment variables (store-readable: use paths, not secret values) |
 | `environmentFile` | path or null | `null` | `KEY=VALUE` file read by systemd before start (secrets, agenix, sops-nix) |
 | `schedule` | str or null | `null` | systemd `OnCalendar` expression; null runs once at boot |
 | `settings.command` | enum | `"render"` | `render`, `init`, `validate`, `doctor`, `plan`, `apply`, `destroy`, `output`, `prune` or `limits` |
-| `settings.config` | path or null | `null` | Python infrastructure module (sets `--config`) |
+| `settings.config` | path or null | `null` | Stack definition: `.py`, `.json` or `.nix` (sets `--config`) |
 | `settings.workdir` | str | `/var/lib/python-tofu` | Working directory for HCL and state |
 | `settings.stackName` | str or null | `null` | State name (sets `--stack-name`) |
 | `settings.limits` | `error`/`warn`/`off` or null | `null` | Limit enforcement (sets `--limits`) |
 | `settings.usage` | `stack`/`live` or null | `null` | Usage measurement mode (sets `--usage`) |
 | `settings.varFile` | path or null | `null` | Extra tfvars for plan/apply/destroy (sets `--var-file`) |
 | `settings.prune` | bool or null | `null` | `true` → `--prune`, `false` → `--no-prune` (plan/apply only) |
+| `settings.autoApprove` | bool | false | `--auto-approve` for `apply`/`destroy` (needed for unattended apply) |
 | `settings.extraArgs` | list of str | `[]` | Extra CLI arguments |
 
 `apis` is deliberately not a `settings.command`: it is an interactive
@@ -39,6 +43,71 @@ into the read-only Nix store and could not hold state. A custom workdir must be
 creatable by the service; the unit makes `${settings.workdir}` writable through
 `ReadWritePaths`.
 
+## Nix-declared stacks (apply at rebuild time)
+
+`stack` and `stackFile` let you declare the cloud stack in Nix instead of a
+separate `.py`/`.json` file. The declaration is evaluated **at build time** with
+the option tree from `nix/stack.nix`, written to the store as
+`python-tofu-stack.json`, and passed to the service as `--config`. No `nix`
+binary is needed at activation.
+
+```nix
+services.python-tofu = {
+  enable = true;
+  stack = {
+    provider = {
+      project = "my-project";
+      region = "europe-west1";
+    };
+    buckets.artifacts = {
+      project = "my-project";
+      location = "EU";
+    };
+  };
+
+  # Reconcile on every rebuild. `restartTriggers` restarts the boot-time
+  # oneshot when the evaluated JSON (or the package) changes.
+  settings = {
+    command = "apply";
+    autoApprove = true;
+  };
+};
+```
+
+The keyed sections mirror the `GcpStack` field names; the key fills the
+resource identity field unless it is set explicitly (`buckets.artifacts` →
+`name = "artifacts"`, `projects.demo` → `project_id = "demo"`,
+`service_accounts.ci-runner` → `account_id = "ci-runner"`). For a declaration
+that needs `imports`, `mkMerge` or `mkIf`, point `stackFile` at a Nix module
+using the same options:
+
+```nix
+services.python-tofu.stackFile = ./infra.nix;
+```
+
+`stack`, `stackFile` and `settings.config` are mutually exclusive. See
+[`docs/reference/nix-stacks.md`](nix-stacks.md) for the full authoring guide.
+
+A computed resource reference is a plain string with an escaped Nix
+interpolation:
+
+```nix
+outputs.bucket.value = "\${google_storage_bucket.bucket_artifacts.name}";
+```
+
+Resource *identity* fields (`buckets.*.name`, `projects.*.project_id`,
+`pubsub_topics.*.name`, …) must be literals because they become HCL labels;
+Python validation rejects an interpolation there with a targeted error.
+
+## Rebuild semantics
+
+The boot-time unit is `oneshot` with `RemainAfterExit=true`, so it would stay
+active and never re-run on a later `nixos-rebuild switch`. The module sets
+`restartTriggers` to the evaluated config and the toolchain, so systemd
+restarts it when any of them changes. With `settings.command = "apply"` and
+`settings.autoApprove = true`, a rebuild therefore reconciles the declared
+stack.
+
 ## Systemd service
 
 The module creates `python-tofu.service` with:
@@ -48,6 +117,9 @@ The module creates `python-tofu.service` with:
   timed unit so the timer can retrigger it
 - `StateDirectory=python-tofu`
 - `path = [ tofuPackage ]`, so the CLI finds `tofu` without a system-wide install
+  (`nixPackage` is added only for an explicit `.nix` config)
+- `restartTriggers` for the evaluated config and toolchain, so a rebuild
+  re-runs the unit
 - `TF_PLUGIN_CACHE_DIR=${settings.workdir}/.tofu-plugins`, created by
   `ExecStartPre`, so providers are cached instead of re-downloaded
 - `CHECKPOINT_DISABLE=1`

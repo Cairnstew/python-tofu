@@ -802,6 +802,27 @@ lookup of the project number:
 > so the subscription silently expires after 31 days. Use a long explicit TTL
 > such as `"315360000s"` when you mean "never".
 
+## Nix-authored stacks
+
+A stack can also be authored in Nix. The Nix option tree mirrors the
+`GcpStack` fields exactly, and the evaluated JSON is validated by the same
+Pydantic models — so limits, `prune`, `doctor` and rendering behave
+identically:
+
+```nix
+{ ... }: {
+  provider.project = "my-project";
+  buckets.artifacts = {
+    project = "my-project";
+    location = "EU";
+  };
+}
+```
+
+Use `python-tofu.lib.evalStack` (or `services.python-tofu.stackFile` on NixOS)
+to evaluate it. See [`nix-stacks.md`](nix-stacks.md) for the schema, keyed
+sections, references and rebuild-time apply.
+
 ## Composing a stack
 
 Split a stack into `StackPart` values and merge them with `compose`:

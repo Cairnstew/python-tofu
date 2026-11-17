@@ -13,9 +13,34 @@ let
   stackNameCommands = workdirCommands;
   varFileCommands = [ "plan" "apply" "destroy" ];
   pruneCommands = [ "plan" "apply" ];
+  autoApproveCommands = [ "apply" "destroy" ];
   configCommands = workdirCommands ++ [ "limits" ];
 
   accepts = commands: builtins.elem cfg.settings.command commands;
+
+  # A Nix-declared stack is evaluated *now*, at build time, and written to the
+  # store as JSON. The service therefore needs no `nix` binary and no network
+  # at activation: it only reads the immutable JSON next to the binary.
+  hasStackModule = cfg.stack != null || cfg.stackFile != null;
+  stackModules =
+    lib.optional (cfg.stack != null) cfg.stack
+    ++ lib.optional (cfg.stackFile != null) cfg.stackFile;
+  evaluatedStack = lib.evalModules {
+    modules = [ ./stack.nix ] ++ stackModules;
+    specialArgs = { inherit lib pkgs; };
+  };
+  stackConfigFile = pkgs.writeText "python-tofu-stack.json" (
+    builtins.toJSON { stack = evaluatedStack.config._stack; }
+  );
+  configFile =
+    if hasStackModule && cfg.settings.config != null then
+      throw "services.python-tofu: set either `settings.config` or `stack`/`stackFile`, not both"
+    else if hasStackModule then
+      stackConfigFile
+    else
+      cfg.settings.config;
+
+  needsNix = configFile != null && lib.hasSuffix ".nix" (toString configFile);
 
   workdir = lib.removeSuffix "/" (toString cfg.settings.workdir);
   pluginCacheDir = "${workdir}/.tofu-plugins";
@@ -23,7 +48,7 @@ let
   commandArgs =
     [ "${cfg.package}/bin/python-tofu" cfg.settings.command ]
     ++ lib.optionals (accepts configCommands) (
-      lib.optional (cfg.settings.config != null) "--config=${toString cfg.settings.config}"
+      lib.optional (configFile != null) "--config=${toString configFile}"
     )
     ++ lib.optionals (accepts workdirCommands) [ "--workdir=${workdir}" ]
     ++ lib.optionals (accepts stackNameCommands) (
@@ -42,6 +67,9 @@ let
       lib.optional (cfg.settings.prune != null)
         (if cfg.settings.prune then "--prune" else "--no-prune")
     )
+    ++ lib.optionals (accepts autoApproveCommands && cfg.settings.autoApprove) [
+      "--auto-approve"
+    ]
     ++ cfg.settings.extraArgs;
 in
 {
@@ -63,6 +91,47 @@ in
       description = ''
         OpenTofu package placed on the unit's PATH. Ignored only when a
         ``--binary`` path is supplied through ``settings.extraArgs``.
+      '';
+    };
+
+    nixPackage = lib.mkOption {
+      type = lib.types.package;
+      default = pkgs.nix;
+      defaultText = lib.literalExpression "pkgs.nix";
+      description = ''
+        Nix package placed on the unit's PATH when ``settings.config`` is a
+        ``.nix`` file. Nix-declared ``stack``/``stackFile`` configs are evaluated
+        at build time and do not need it.
+      '';
+    };
+
+    stack = lib.mkOption {
+      type = lib.types.nullOr (lib.types.attrsOf lib.types.anything);
+      default = null;
+      example = lib.literalExpression ''
+        {
+          provider.project = "my-project";
+          buckets.artifacts = { location = "EU"; };
+        }
+      '';
+      description = ''
+        Declare the cloud stack in Nix. The value uses the option tree from
+        ``nix/stack.nix`` (sections keyed by local name; the key fills the
+        resource identity field). It is evaluated at build time and written to
+        the store as JSON; the service applies it on activation.
+
+        Mutually exclusive with ``settings.config`` and ``stackFile``.
+      '';
+    };
+
+    stackFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      example = lib.literalExpression "./infra.nix";
+      description = ''
+        A Nix module using the ``nix/stack.nix`` options, evaluated at build
+        time. Use it instead of ``stack`` when the declaration needs ``imports``
+        or ``mkMerge``. Mutually exclusive with ``settings.config`` and ``stack``.
       '';
     };
 
@@ -168,6 +237,16 @@ in
         '';
       };
 
+      autoApprove = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Pass ``--auto-approve`` to ``apply``/``destroy``. Required for an
+          unattended rebuild-time apply; off by default so an accidental
+          ``command = "apply"`` still stops at the approval prompt.
+        '';
+      };
+
       extraArgs = lib.mkOption {
         type = lib.types.listOf lib.types.str;
         default = [ ];
@@ -184,8 +263,16 @@ in
       wants = [ "network-online.target" ];
 
       # The CLI shells out to `tofu`; without this the unit cannot find it even
-      # though the Python package is self-contained.
-      path = [ cfg.tofuPackage ];
+      # though the Python package is self-contained. A `.nix` config also needs
+      # `nix` at runtime; a Nix-declared stack is already JSON in the store.
+      path = [ cfg.tofuPackage ] ++ lib.optional needsNix cfg.nixPackage;
+
+      # A boot-time oneshot with RemainAfterExit stays active, so a rebuild would
+      # otherwise never re-run it. Anchor the unit to the evaluated config and
+      # the toolchain: `nixos-rebuild switch` restarts it when any of them moves.
+      restartTriggers =
+        lib.optional (configFile != null) configFile
+        ++ [ cfg.package cfg.tofuPackage ];
 
       environment = {
         CHECKPOINT_DISABLE = "1";

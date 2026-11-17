@@ -9,6 +9,7 @@ from python_tofu.models import (
     BucketObject,
     GcpProvider,
     GcpStack,
+    ProjectIamMember,
     StorageBucket,
 )
 from python_tofu.services.renderer import Renderer
@@ -66,6 +67,39 @@ def test_external_buckets_are_allowed() -> None:
         bucket_objects=[BucketObject(bucket="shared-cache", name="x", content="x")],
     )
     assert stack.bucket_objects[0].bucket == "shared-cache"
+
+
+def test_bucket_name_rejects_an_hcl_interpolation() -> None:
+    with pytest.raises(ValidationError, match="must be a literal"):
+        StorageBucket(project="demo-project", name="${google_project.p.project_id}-assets")
+
+
+def test_iam_member_accepts_a_principal_interpolation() -> None:
+    stack = GcpStack(
+        provider=GcpProvider(project="demo-project"),
+        iam_members=[
+            ProjectIamMember(
+                project="demo-project",
+                role="roles/storage.admin",
+                member="serviceAccount:${google_service_account.sa_ci.email}",
+            )
+        ],
+    )
+    main = Renderer(".tofu").render_text(stack)["main.tf"]
+    assert '"serviceAccount:${google_service_account.sa_ci.email}"' in main
+
+
+def test_object_accepts_a_bucket_interpolation() -> None:
+    stack = _stack(
+        BucketObject(
+            bucket="${google_storage_bucket.bucket_other.name}",
+            name="x.txt",
+            content="x",
+        )
+    )
+    main = Renderer(".tofu").render_text(stack)["main.tf"]
+    assert '"${google_storage_bucket.bucket_other.name}"' in main
+    assert "google_storage_bucket.bucket_demo_project_artifacts.name" not in main
 
 
 def test_duplicate_objects_are_rejected() -> None:

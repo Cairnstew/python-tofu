@@ -52,6 +52,8 @@ def _eval_module(settings: str, extra: str = "") -> dict:
         execPre = builtins.concatStringsSep " " svc.serviceConfig.ExecStartPre;
         cache = svc.environment.TF_PLUGIN_CACHE_DIR;
         hasTofu = builtins.any (p: toString p == toString pkgs.opentofu) svc.path;
+        hasNix = builtins.any (p: toString p == toString pkgs.nix) svc.path;
+        restart = map toString svc.restartTriggers;
         remain = svc.serviceConfig.RemainAfterExit;
         wantedBy = svc.wantedBy;
         timer = timer == null;
@@ -250,3 +252,88 @@ def test_module_scheduled_unit_is_retriggerable() -> None:
     assert scheduled["timerCalendar"] == "daily"
     assert scheduled["timerPersistent"] is True
     assert scheduled["timerWantedBy"] == ["timers.target"]
+
+
+@pytest.mark.nix
+def test_module_evaluates_a_nix_declared_stack_to_json() -> None:
+    config = _eval_module(
+        'command = "plan"; workdir = "/var/lib/python-tofu";',
+        extra="""
+          stack = {
+            provider.project = "demo-project";
+            buckets.artifacts = { location = "EU"; };
+          };
+        """,
+    )
+    assert "python-tofu-stack.json" in config["exec"]
+    assert "--config=/nix/store/" in config["exec"]
+    # The JSON file is a restart trigger, so `nixos-rebuild switch` re-runs it.
+    assert any(item.endswith("python-tofu-stack.json") for item in config["restart"])
+
+
+@pytest.mark.nix
+def test_module_does_not_need_nix_for_a_stack_json() -> None:
+    config = _eval_module(
+        'command = "apply"; workdir = "/var/lib/python-tofu";',
+        extra='stack = { provider.project = "demo-project"; };',
+    )
+    assert config["hasNix"] is False
+
+
+@pytest.mark.nix
+def test_module_adds_nix_for_a_dot_nix_config() -> None:
+    config = _eval_module('command = "render"; config = "/tmp/infra.nix"; workdir = "/tmp/w";')
+    assert config["hasNix"] is True
+
+
+@pytest.mark.nix
+def test_module_auto_approves_apply_and_destroy_only() -> None:
+    apply = _eval_module('command = "apply"; workdir = "/tmp/w"; autoApprove = true;')
+    assert "--auto-approve" in apply["exec"]
+
+    render = _eval_module('command = "render"; workdir = "/tmp/w"; autoApprove = true;')
+    assert "--auto-approve" not in render["exec"]
+
+    default = _eval_module('command = "apply"; workdir = "/tmp/w";')
+    assert "--auto-approve" not in default["exec"]
+
+
+@pytest.mark.nix
+def test_module_rejects_config_and_stack_together() -> None:
+    expr = (
+        """
+      let
+        flake = builtins.getFlake (toString ./.);
+        nixpkgs = flake.inputs.nixpkgs;
+        pkgs = nixpkgs.legacyPackages.x86_64-linux;
+      """
+        + _STUB
+        + """
+        evaled = nixpkgs.lib.evalModules {
+          modules = [
+            flake.nixosModules.default
+            stub
+            {
+              _module.args.pkgs = pkgs;
+              services.python-tofu = {
+                enable = true;
+                package = pkgs.hello;
+                settings = {
+                  command = "plan";
+                  config = pkgs.writeText "infra.py" "";
+                };
+                stack = { provider.project = "demo-project"; };
+              };
+            }
+          ];
+        };
+      in evaled.config.systemd.services.python-tofu.serviceConfig.ExecStart
+    """
+    )
+    result = subprocess.run(
+        ["nix", "eval", "--impure", "--expr", expr],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "either `settings.config` or `stack`" in result.stderr

@@ -2,7 +2,17 @@ from __future__ import annotations
 
 import pytest
 
-from python_tofu.hcl import Attr, Block, HclError, Raw, attr, body, render, render_value
+from python_tofu.hcl import (
+    Attr,
+    Block,
+    HclError,
+    Raw,
+    attr,
+    body,
+    is_reference_template,
+    render,
+    render_value,
+)
 
 
 def test_strings_are_quoted_and_escaped() -> None:
@@ -36,6 +46,21 @@ def test_raw_expression_is_verbatim() -> None:
 def test_unsupported_type_raises() -> None:
     with pytest.raises(HclError):
         render_value(object())
+
+
+@pytest.mark.parametrize("value", ["${google_storage_bucket.b.name}", "prefix-${x.y}-suffix"])
+def test_reference_templates_are_detected(value: str) -> None:
+    assert is_reference_template(value) is True
+
+
+@pytest.mark.parametrize("value", ["plain", "", "$${not-a-template}", None, 3])
+def test_literals_are_not_reference_templates(value: object) -> None:
+    assert is_reference_template(value) is False
+
+
+def test_reference_template_string_is_quoted_not_rendered_raw() -> None:
+    # A Nix-authored reference is a string; HCL interpolates inside quotes.
+    assert render_value("${google_storage_bucket.b.name}") == '"${google_storage_bucket.b.name}"'
 
 
 def test_attr_skips_none() -> None:

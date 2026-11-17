@@ -12,6 +12,7 @@ from typing import Literal, Mapping
 
 from pydantic import Field, field_validator, model_validator
 
+from python_tofu.core.hcl import is_reference_template
 from python_tofu.core.models import TofuModel
 from python_tofu.providers.gcp.quirks import (
     ARTIFACT_REPO_ID_RE,
@@ -27,6 +28,7 @@ from python_tofu.providers.gcp.quirks import (
     SERVICE_ACCOUNT_ID_RE,
     TIMEOUT_RE,
     VOLUME_NAME_RE,
+    literal_identifier,
     validate_role,
 )
 from python_tofu.providers.gcp.service_names import DEFAULT_APIS
@@ -101,6 +103,11 @@ class GcpProject(TofuModel):
     @field_validator("project_id")
     @classmethod
     def _valid_project_id(cls, value: str) -> str:
+        literal_identifier(
+            value,
+            "project_id",
+            reason="project_id becomes the HCL label and the project cross-reference key.",
+        )
         if not PROJECT_ID_RE.match(value):
             raise ValueError(
                 "project_id must be 6-30 chars, start with a letter, contain only "
@@ -236,6 +243,11 @@ class ServiceAccount(TofuModel):
     @field_validator("account_id")
     @classmethod
     def _valid_account_id(cls, value: str) -> str:
+        literal_identifier(
+            value,
+            "account_id",
+            reason="account_id becomes the HCL label and the service-account cross-reference key.",
+        )
         if not SERVICE_ACCOUNT_ID_RE.match(value):
             raise ValueError(
                 "account_id must be 6-30 chars, start with a letter, contain only "
@@ -270,6 +282,7 @@ class StorageBucket(TofuModel):
     @field_validator("name")
     @classmethod
     def _valid_bucket_name(cls, value: str) -> str:
+        literal_identifier(value, "name", reason="the bucket name becomes the HCL resource label.")
         if not BUCKET_NAME_RE.match(value):
             raise ValueError(
                 "bucket names must be 3-63 chars, start/end with a letter or digit, and "
@@ -312,6 +325,7 @@ class BucketObject(TofuModel):
     @field_validator("name")
     @classmethod
     def _valid_object_name(cls, value: str) -> str:
+        literal_identifier(value, "name", reason="the object name becomes the HCL resource label.")
         if not value or value.startswith("/") or "\n" in value:
             raise ValueError(
                 "object names must be a non-empty key without a leading slash or newline: "
@@ -368,7 +382,7 @@ class SecretEnv(TofuModel):
     @field_validator("secret")
     @classmethod
     def _valid_secret(cls, value: str) -> str:
-        if value.startswith("projects/"):
+        if is_reference_template(value) or value.startswith("projects/"):
             return value
         if not SECRET_NAME_RE.match(value):
             raise ValueError(
@@ -446,7 +460,7 @@ class SecretVolume(TofuModel):
     @field_validator("secret")
     @classmethod
     def _valid_secret(cls, value: str) -> str:
-        if value.startswith("projects/"):
+        if is_reference_template(value) or value.startswith("projects/"):
             return value
         if not SECRET_NAME_RE.match(value):
             raise ValueError(
@@ -593,6 +607,8 @@ class CloudRunService(TofuModel):
     @classmethod
     def _valid_invokers(cls, value: list[str]) -> list[str]:
         for item in value:
+            if is_reference_template(item):
+                continue
             if "@" not in item and not SERVICE_ACCOUNT_ID_RE.match(item):
                 raise ValueError(
                     "invoker_service_accounts entries must be declared account_ids or "
@@ -603,6 +619,7 @@ class CloudRunService(TofuModel):
     @field_validator("name")
     @classmethod
     def _valid_name(cls, value: str) -> str:
+        literal_identifier(value, "name", reason="the service name becomes the HCL resource label.")
         if not CLOUD_RUN_SERVICE_NAME_RE.match(value):
             raise ValueError(
                 "Cloud Run service names must be 1-49 chars, start with a letter, "
@@ -694,6 +711,9 @@ class CloudRunFunction(TofuModel):
     @field_validator("name")
     @classmethod
     def _valid_name(cls, value: str) -> str:
+        literal_identifier(
+            value, "name", reason="the function name becomes the HCL resource label."
+        )
         if not CLOUD_FUNCTION_NAME_RE.match(value):
             raise ValueError(
                 "function names must be 1-63 chars, start with a letter, and contain "
@@ -740,6 +760,9 @@ class ArtifactRegistryRepository(TofuModel):
     @field_validator("repository_id")
     @classmethod
     def _valid_repository_id(cls, value: str) -> str:
+        literal_identifier(
+            value, "repository_id", reason="repository_id becomes the HCL resource label."
+        )
         if not ARTIFACT_REPO_ID_RE.match(value):
             raise ValueError(
                 "repository_id must be 2-63 chars, start with a letter, and contain "
@@ -787,6 +810,7 @@ class CloudRunJob(TofuModel):
     @field_validator("name")
     @classmethod
     def _valid_name(cls, value: str) -> str:
+        literal_identifier(value, "name", reason="the job name becomes the HCL resource label.")
         if not CLOUD_RUN_SERVICE_NAME_RE.match(value):
             raise ValueError(
                 "Cloud Run job names must be 1-49 chars, start with a letter, and "
@@ -869,6 +893,9 @@ class CloudRunWorkerPool(TofuModel):
     @field_validator("name")
     @classmethod
     def _valid_name(cls, value: str) -> str:
+        literal_identifier(
+            value, "name", reason="the worker pool name becomes the HCL resource label."
+        )
         if not CLOUD_RUN_SERVICE_NAME_RE.match(value):
             raise ValueError(
                 "Cloud Run worker pool names must be 1-49 chars, start with a letter, "
@@ -930,6 +957,7 @@ class PubSubTopic(TofuModel):
     @field_validator("name")
     @classmethod
     def _valid_name(cls, value: str) -> str:
+        literal_identifier(value, "name", reason="the topic name becomes the HCL resource label.")
         if not PUBSUB_NAME_RE.match(value):
             raise ValueError(
                 "Pub/Sub names must be 3-255 chars, start with a letter, and contain "
@@ -959,6 +987,8 @@ class DeadLetter(TofuModel):
     @field_validator("topic")
     @classmethod
     def _valid_topic(cls, value: str) -> str:
+        if is_reference_template(value):
+            return value
         name = value.rsplit("/", 1)[-1]
         if not PUBSUB_NAME_RE.match(name):
             raise ValueError(f"dead-letter topic must be a Pub/Sub name or path: {value!r}")
@@ -1034,6 +1064,9 @@ class PubSubSubscription(TofuModel):
     @field_validator("name")
     @classmethod
     def _valid_name(cls, value: str) -> str:
+        literal_identifier(
+            value, "name", reason="the subscription name becomes the HCL resource label."
+        )
         if not PUBSUB_NAME_RE.match(value):
             raise ValueError(
                 "Pub/Sub names must be 3-255 chars, start with a letter, and contain "
@@ -1044,6 +1077,8 @@ class PubSubSubscription(TofuModel):
     @field_validator("topic")
     @classmethod
     def _valid_topic(cls, value: str) -> str:
+        if is_reference_template(value):
+            return value
         name = value.rsplit("/", 1)[-1]
         if not PUBSUB_NAME_RE.match(name):
             raise ValueError(f"topic must be a Pub/Sub name or path: {value!r}")
@@ -1091,8 +1126,8 @@ class PubSubSubscription(TofuModel):
     @field_validator("push_service_account")
     @classmethod
     def _valid_push_account(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
+        if value is None or is_reference_template(value):
+            return value
         if "@" not in value and not SERVICE_ACCOUNT_ID_RE.match(value):
             raise ValueError(
                 "push_service_account must be a declared account_id or a service-account "

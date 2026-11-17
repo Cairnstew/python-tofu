@@ -64,6 +64,17 @@ def test_topic_rejects_out_of_range_retention(value: str) -> None:
 
 
 # ── subscriptions ─────────────────────────────────────────────────────
+def test_subscription_accepts_a_topic_interpolation() -> None:
+    stack = _stack(
+        pubsub_topics=[],
+        pubsub_subscriptions=[_subscription(topic="${google_pubsub_topic.topic_external.id}")],
+    )
+    text = _main(stack)
+    # A reference bypasses the declared-topic rewrite and stays an interpolation.
+    assert 'topic = "${google_pubsub_topic.topic_external.id}"' in text
+    assert "google_pubsub_topic.topic_jobs.id" not in text
+
+
 def test_pull_subscription_defaults_to_declared_topic() -> None:
     text = _main(_stack())
 

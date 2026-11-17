@@ -41,6 +41,23 @@
       # exports these values and the checks below keep them honest.
       versions = import ./nix/provider-versions.nix;
 
+      # Evaluate the Nix authoring option tree (nix/stack.nix) into the JSON
+      # schema the provider's Pydantic models validate. Nix composes; Python
+      # still owns validation, limits and HCL.
+      evalStack =
+        { modules ? [ ]
+        , specialArgs ? { }
+        }:
+        let
+          evaluated = lib.evalModules {
+            modules = [ ./nix/stack.nix ] ++ modules;
+            specialArgs = specialArgs;
+          };
+        in
+        evaluated.config._stack;
+
+      mkStackJson = args: builtins.toJSON { stack = evalStack args; };
+
       overlay = workspace.mkPyprojectOverlay {
         sourcePreference = "wheel";
       };
@@ -118,6 +135,19 @@
                 --set PYTHON_TOFU_BINARY "$out/bin/tofu"
             '';
           };
+
+          # For `--config ./infra.nix` outside a systemd unit. Nix-declared
+          # `services.python-tofu.stack` configs are evaluated at build time and
+          # do not need this variant.
+          with-tofu-nix = p.pkgs.symlinkJoin {
+            name = "python-tofu-with-tofu-nix";
+            paths = [ self.packages.${system}.with-tofu p.pkgs.nix ];
+            nativeBuildInputs = [ p.pkgs.makeWrapper ];
+            postBuild = ''
+              wrapProgram "$out/bin/python-tofu" \
+                --prefix PATH : ${p.pkgs.nix}/bin
+            '';
+          };
         }
       );
 
@@ -136,6 +166,14 @@
             program = "${self.packages.${system}.with-tofu}/bin/python-tofu";
             meta = {
               description = "python-tofu with the mirrored hashicorp/google provider and OpenTofu";
+            };
+          };
+
+          with-tofu-nix = {
+            type = "app";
+            program = "${self.packages.${system}.with-tofu-nix}/bin/python-tofu";
+            meta = {
+              description = "with-tofu plus a Nix binary for `.nix` stack configs";
             };
           };
         }
@@ -234,20 +272,39 @@
         }
       );
 
+      # A flake-input API for authoring stacks elsewhere.
+      lib = {
+        # Import this path next to a declaration module in `lib.evalModules`.
+        stackModule = ./nix/stack.nix;
+
+        inherit evalStack mkStackJson;
+
+        # `pkgs` is explicit because a JSON file is a system-specific derivation.
+        mkStackFile = pkgs: name: args:
+          pkgs.writeText name (mkStackJson args);
+      };
+
       overlays.default = final: prev: {
         python-tofu = pythonSets.${final.stdenv.hostPlatform.system}.pythonSet."python-tofu";
       };
 
-      nixosModules.default = { pkgs, ... }: {
+      nixosModules.default = { lib, pkgs, ... }: {
         imports = [ ./nix/module.nix ];
-        services.python-tofu.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+        services.python-tofu.package =
+          lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.default;
       };
 
-      homeManagerModules.default = { pkgs, ... }: {
+      # Alias so a flake input can be imported by its own name. `default` stays
+      # for backward compatibility.
+      nixosModules.python-tofu = self.nixosModules.default;
+
+      homeManagerModules.default = { lib, pkgs, ... }: {
         imports = [ ./nix/home-module.nix ];
         programs.python-tofu.package =
           lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.default;
       };
+
+      homeManagerModules.python-tofu = self.homeManagerModules.default;
 
       checks = forAllSystems (system:
         let
@@ -268,6 +325,21 @@
               test -x ${self.packages.${system}.with-tofu}/bin/tofu
               python-tofu --version > /dev/null
               grep -q "PYTHON_TOFU_BINARY" ${self.packages.${system}.with-tofu}/bin/python-tofu
+              touch "$out"
+            '';
+
+          # The `.nix`-config variant must keep the sibling `tofu` and add `nix`.
+          with-tofu-nix-wired = pkgs.runCommand "check-with-tofu-nix"
+            {
+              nativeBuildInputs = [ self.packages.${system}.with-tofu-nix ];
+            }
+            ''
+              set -eu
+              test -x ${self.packages.${system}.with-tofu-nix}/bin/tofu
+              python-tofu --version > /dev/null
+              command -v nix > /dev/null
+              # The env export lives on the inner wrapper, so search the bin dir.
+              grep -Rq "PYTHON_TOFU_BINARY" ${self.packages.${system}.with-tofu-nix}/bin
               touch "$out"
             '';
 
@@ -365,6 +437,43 @@
             tofu fmt -check -recursive "$out"
           '';
 
+          # The Nix option tree is the authoring surface. Evaluate it at check
+          # time and assert the keyed sections land in the JSON schema.
+          stack-eval =
+            let
+              stack = evalStack { modules = [ ./examples/gcp_nix/module.nix ]; };
+              project = builtins.head stack.projects;
+              bucket = builtins.head stack.buckets;
+              account = builtins.head stack.service_accounts;
+            in
+            if project.project_id == "example-bootstrap"
+              && bucket.name == "example-bootstrap-artifacts"
+              && account.account_id == "ci-runner"
+            then pkgs.writeText "stack-eval" (builtins.toJSON stack)
+            else throw "stack-eval: keyed sections did not fill the identity fields";
+
+          # The strong cross-language check: a Nix-authored stack must render
+          # byte-for-byte like the Python example it mirrors. Any schema drift
+          # in either authoring surface breaks this.
+          render-nix-example =
+            let
+              stack = mkStackJson { modules = [ ./examples/gcp_nix/module.nix ]; };
+            in
+            pkgs.runCommand "render-nix-example"
+              {
+                nativeBuildInputs = [ self.packages.${system}.default pkgs.opentofu ];
+              } ''
+              mkdir -p "$TMPDIR/nix" "$TMPDIR/python"
+              printf '%s' ${lib.escapeShellArg stack} > "$TMPDIR/stack.json"
+              python-tofu render --config "$TMPDIR/stack.json" --workdir "$TMPDIR/nix" > /dev/null
+              python-tofu render \
+                --config ${./examples/gcp_bootstrap/infra.py} \
+                --workdir "$TMPDIR/python" > /dev/null
+              diff -ru "$TMPDIR/python" "$TMPDIR/nix"
+              tofu fmt -check -recursive "$TMPDIR/nix"
+              touch "$out"
+            '';
+
           # The checks below run the same locked dev toolchain as the dev shell,
           # so `nix flake check` locally covers everything CI runs separately.
           lint = pkgs.runCommand "lint"
@@ -437,6 +546,10 @@
             check bootstrap ${./examples/gcp_bootstrap}/infra.py
             check clean ${./examples/gcp_clean}/stack.py
             check test-infra ${./examples/gcp_test_infra}/stack.py
+            # The Nix-authored stack is validated by the same provider schema.
+            check nix ${pkgs.writeText "nix-stack.json" (mkStackJson {
+              modules = [ ./examples/gcp_nix/module.nix ];
+            })}
             touch "$out"
           '';
 
@@ -455,9 +568,14 @@
                 tofuPackage = pkgs.writeShellScriptBin "tofu" ''
                   echo "OpenTofu v9.9.9"
                 '';
+                stack = {
+                  provider.project = "demo-project";
+                  buckets.artifacts = {
+                    location = "EU";
+                  };
+                };
                 settings = {
                   command = "plan";
-                  config = pkgs.writeText "infra.py" "# fake stack for the VM test\n";
                   workdir = "/var/lib/python-tofu";
                   stackName = "prod";
                   prune = true;
@@ -471,6 +589,8 @@
               machine.succeed("grep -q -- '--stack-name=prod' /var/lib/python-tofu/invocations")
               machine.succeed("grep -q -- '--prune' /var/lib/python-tofu/invocations")
               machine.succeed("grep -q 'tofu=.*/tofu' /var/lib/python-tofu/invocations")
+              machine.succeed("grep -q 'python-tofu-stack.json' /var/lib/python-tofu/invocations")
+              machine.succeed("grep -q 'artifacts' $(sed -n 's/.*--config=\\([^ ]*\\).*/\\1/p' /var/lib/python-tofu/invocations)")
             '';
           };
 
