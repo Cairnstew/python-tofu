@@ -57,6 +57,43 @@ def test_explicit_identity_wins_over_the_key() -> None:
 
 
 @pytest.mark.nix
+def test_bucket_object_accepts_a_path_source() -> None:
+    stack = _eval("""
+      {
+        provider.project = "demo-project";
+        buckets.artifacts = { project = "demo-project"; };
+        bucket_objects."dist/app.js" = {
+          bucket = "artifacts";
+          source = flake.outPath + "/README.md";
+          content_type = "application/javascript";
+        };
+      }
+    """)
+    obj = stack["bucket_objects"][0]
+    assert obj["name"] == "dist/app.js"
+    assert isinstance(obj["source"], str)
+    assert obj["source"].endswith("README.md")
+
+
+@pytest.mark.nix
+def test_bucket_object_accepts_text_content() -> None:
+    stack = _eval("""
+      {
+        provider.project = "demo-project";
+        buckets.artifacts = { project = "demo-project"; };
+        bucket_objects."config/release.json" = {
+          bucket = "artifacts";
+          content = builtins.toJSON { release = "v1"; };
+          content_type = "application/json";
+        };
+      }
+    """)
+    obj = stack["bucket_objects"][0]
+    assert obj["name"] == "config/release.json"
+    assert json.loads(obj["content"]) == {"release": "v1"}
+
+
+@pytest.mark.nix
 def test_reference_string_survives_as_a_plain_string() -> None:
     stack = _eval("""
       {
