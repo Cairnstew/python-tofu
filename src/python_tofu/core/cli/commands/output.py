@@ -32,8 +32,9 @@ def create_app(provider: Provider) -> typer.Typer:
             True, "--json/--no-json", help="Emit machine-readable JSON."
         ),
     ) -> None:
-        # ``output`` does not load the config, so a stack's own ``name`` is not
-        # visible here: the default directory comes from the file stem.
+        # ``output`` never renders, but it imports the config when no explicit
+        # ``--workdir``/``--stack-name`` is given so a stack's own ``name``
+        # selects the same default directory every rendering command uses.
         command = BaseCommand(
             make_context(
                 config,
@@ -44,9 +45,12 @@ def create_app(provider: Provider) -> typer.Typer:
                 stack_name=stack_name,
             )
         )
-        command.ctx.workdir = command.ctx.derive_workdir()
+        command.ctx.workdir = command.ctx.derive_workdir(discover_name=True)
         if not command.ctx.workdir.exists():
-            command.abort(f"working directory does not exist: {command.ctx.workdir}")
+            command.abort(
+                f"working directory does not exist: {command.ctx.workdir} "
+                "(pass --workdir or --stack-name if the stack uses another name)"
+            )
         command.run_tofu("output", json_output=json_output)
 
     return app

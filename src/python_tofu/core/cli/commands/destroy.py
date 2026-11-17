@@ -15,10 +15,11 @@ from python_tofu.core.cli.options import (
     StackNameOption,
     UsageModeOption,
     VarFileOption,
+    VarOption,
     VerboseOption,
     WorkdirOption,
     make_context,
-    resolve_path,
+    resolve_paths,
 )
 from python_tofu.core.provider import Provider
 
@@ -40,6 +41,7 @@ def create_app(provider: Provider) -> typer.Typer:
             False, "--auto-approve", help="Skip the interactive approval."
         ),
         var_file: VarFileOption = None,
+        vars: VarOption = None,
     ) -> None:
         command = BaseCommand(
             make_context(
@@ -56,6 +58,11 @@ def create_app(provider: Provider) -> typer.Typer:
         )
         command.prepare()
         command.run_tofu("init")
-        command.run_tofu("destroy", auto_approve=auto_approve, var_file=resolve_path(var_file))
+        command.run_tofu(
+            "destroy",
+            auto_approve=auto_approve,
+            var_file=resolve_paths(var_file),
+            vars=vars or (),
+        )
 
     return app

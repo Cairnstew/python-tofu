@@ -24,10 +24,11 @@ Every command that loads a stack (`render`, `init`, `validate`, `doctor`, `plan`
 | `--fail-on-unknown` | false | Fail when a limit could not be measured (ignored with `--limits off`) |
 
 `output` reads an existing workdir and accepts `--config`, `--stack-name`,
-`--workdir`, `--binary`, `--verbose` and `--json/--no-json`. It never renders:
-`--config` only names the default directory (`.tofu/<stem>`), so pass the same
-`--config`/`--stack-name` you used for `apply` when the stack sets its own
-`name`.
+`--workdir`, `--binary`, `--verbose` and `--json/--no-json`. It never renders.
+When neither `--workdir` nor `--stack-name` is given it imports the config only
+to read the stack's `name`, so `--config` selects the same default directory as
+the rendering commands. If the config cannot be loaded it falls back to the
+config file stem; pass `--stack-name` to avoid the import.
 
 When `--workdir` is omitted the directory is `.tofu/<stack-name>`, where the
 name is `--stack-name`, else the stack's `name`, else the config file stem.
@@ -45,7 +46,21 @@ Render the Python stack to `versions.tf`, `providers.tf`, `main.tf` and a
 
 ```bash
 python-tofu render -c infra.py -w .tofu
+python-tofu render -c infra.py --check      # exit 1 if the workdir is stale
+python-tofu render -c infra.py --diff       # show what --check would change
+python-tofu render -c infra.py --stdout main.tf
 ```
+
+| Option | Description |
+|--------|-------------|
+| `--check` | Compare the rendered HCL with the workdir and exit `1` when they differ. Writes nothing. |
+| `--diff` | Like `--check`, but print a unified diff for each stale file. Writes nothing. |
+| `--stdout FILE` | Print one rendered file to stdout instead of writing. Writes nothing. |
+
+`--check` and `--diff` are the CI counterpart of a hand edit: they fail when the
+workdir no longer matches the Python stack, without rewriting it. A missing
+workdir counts as out of date. `--check`/`--diff` cannot be combined with
+`--stdout`.
 
 ### `init`
 
@@ -110,7 +125,8 @@ summary derived from `tofu show -json`.
 |--------|-------------|
 | `--destroy` | Plan a destroy |
 | `--no-init` | Skip `tofu init` |
-| `--var-file PATH` | Pass an extra tfvars file |
+| `--var-file PATH` | Pass a tfvars file to tofu (repeatable) |
+| `--var NAME=VALUE` | Set a variable on the command line (repeatable) |
 | `--json` | Print the summary as JSON |
 | `--exit-code` | Exit `2` when the plan has changes, `0` when empty, `1` on error |
 | `--prune` | Also list live resources the stack does not declare (preview only) |
@@ -139,11 +155,16 @@ Render, run `tofu init`, then `tofu apply`.
 | Option | Description |
 |--------|-------------|
 | `--auto-approve` | Skip interactive approval (and the prune confirmation) |
-| `--plan-file PATH` | Apply a previously saved plan instead of re-rendering |
-| `--var-file PATH` | Pass an extra tfvars file |
+| `--plan-file PATH` | Apply a previously saved plan instead of re-rendering. The default workdir still follows the stack's `name` |
+| `--var-file PATH` | Pass a tfvars file to tofu (repeatable) |
+| `--var NAME=VALUE` | Set a variable on the command line (repeatable) |
 | `--prune` | After applying, delete live resources the stack does not declare |
 | `--prune-section NAME` | Prune only `buckets`, `subscriptions`, `topics`, `service_accounts` or `apis` (repeatable, implies `--prune`) |
 | `--allow-service-accounts` | Second gate for pruning service accounts (also needs `include_service_accounts=True`) |
+
+`--var`/`--var-file` cannot be combined with `--plan-file`: OpenTofu bakes the
+variables into the saved plan, so the CLI rejects the combination instead of
+letting `tofu` fail. Pass variables to `plan` when the plan is created.
 
 ### `destroy`
 
@@ -152,7 +173,8 @@ Render, run `tofu init`, then `tofu destroy`.
 | Option | Description |
 |--------|-------------|
 | `--auto-approve` | Skip interactive approval |
-| `--var-file PATH` | Pass an extra tfvars file |
+| `--var-file PATH` | Pass a tfvars file to tofu (repeatable) |
+| `--var NAME=VALUE` | Set a variable on the command line (repeatable) |
 
 ### `prune`
 
@@ -192,8 +214,10 @@ python-tofu apply --config infra.py --prune --auto-approve  # apply, then prune
 | `--auto-approve` | Skip the deletion confirmation |
 
 `plan --prune` only previews. `apply --prune` prunes after a successful apply
-and cannot be combined with `--plan-file`; `plan --prune` cannot be combined
-with `--destroy`.
+and cannot be combined with `--plan-file`; an explicit `plan --prune` (or
+`--prune-section`) cannot be combined with `--destroy`. A destroy plan ignores
+the stack's own `prune.enabled` setting, so `plan --destroy` works on a
+prune-enabled stack without `--no-prune`.
 
 ### `output`
 

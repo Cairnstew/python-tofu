@@ -8,6 +8,7 @@ from typing import Any
 
 import typer
 
+from python_tofu.core.exceptions import TofuError
 from python_tofu.core.limits import LimitMode, UsageMode
 from python_tofu.core.loader import load_stack
 from python_tofu.core.models import BaseStack, validate_stack_name
@@ -40,13 +41,27 @@ class AppContext:
             self.workdir = Path(".tofu") / name
         return stack
 
-    def derive_workdir(self) -> Path:
-        """Resolve the workdir when the stack is not loaded (e.g. ``output``)."""
+    def derive_workdir(self, *, discover_name: bool = False) -> Path:
+        """Resolve the workdir when the stack is not otherwise loaded.
 
-        if self.workdir_is_default:
-            name = self.stack_name or self.config_path.stem
-            return Path(".tofu") / name
-        return self.workdir
+        ``discover_name`` imports the config to honour ``GcpStack.name`` for
+        commands that skip rendering (``output``, ``apply --plan-file``) without
+        making a config import mandatory: an unloadable config falls back to
+        the config file stem, exactly as before.
+        """
+
+        if not self.workdir_is_default:
+            return self.workdir
+
+        name = self.stack_name
+        if name is None and discover_name:
+            try:
+                stack = load_stack(self.config_path, self.provider.stack_type)
+            except TofuError:
+                stack = None
+            if stack is not None and stack.name:
+                name = stack.name
+        return Path(".tofu") / (name or self.config_path.stem)
 
     def renderer(self) -> BaseRenderer[Any]:
         return self.provider.renderer_type(self.workdir)

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--var NAME=VALUE` and repeatable `--var-file` on `plan`, `apply` and
+  `destroy`, matching OpenTofu's own flags. Relative files are resolved against
+  the caller's directory like `--plan-file`. `apply --plan-file` rejects
+  variables with a clear error instead of letting `tofu` fail.
+- `render --check`/`--diff`/`--stdout FILE` render in memory so the workdir is
+  never touched: `--check` exits `1` when the directory no longer matches the
+  Python stack, `--diff` prints the unified diff, and `--stdout` prints one
+  rendered file for review or piping.
 - `python-tofu --version`.
 - Declared outputs: `Output` and `ref()` (`GcpStack.outputs`) render `output`
   blocks after every resource, so `python-tofu output` can read service URLs,
@@ -191,6 +199,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `output` and `apply --plan-file` now resolve the default workdir from the
+  stack's own `name`, matching `render`/`plan`/`apply`. They import the config
+  only for that lookup (never render) and fall back to the config file stem
+  when it cannot be loaded; the missing-directory error now suggests
+  `--workdir` or `--stack-name`.
+- A plain `plan --destroy` no longer fails on a stack that enables pruning:
+  the stack's default prune setting is ignored for a destroy plan. An explicit
+  `--prune`/`--prune-section` still conflicts with `--destroy`.
 - Billing budgets now enable `billingbudgets.googleapis.com`, the API behind
   `google_billing_budget`, instead of `cloudbilling.googleapis.com` (which is
   the separate billing-account metadata API). Cloud Billing is still derived

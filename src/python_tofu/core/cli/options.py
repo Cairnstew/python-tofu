@@ -36,8 +36,12 @@ BinaryOption = Annotated[
 ]
 VerboseOption = Annotated[bool, typer.Option("--verbose", "-v", help="Print every tofu command.")]
 VarFileOption = Annotated[
-    Path | None,
-    typer.Option("--var-file", help="Pass an extra tfvars file to tofu."),
+    list[Path] | None,
+    typer.Option("--var-file", help="Pass a tfvars file to tofu (repeatable)."),
+]
+VarOption = Annotated[
+    list[str] | None,
+    typer.Option("--var", help="Set a variable as NAME=VALUE (repeatable)."),
 ]
 LimitModeOption = Annotated[
     LimitMode | None,
@@ -145,3 +149,9 @@ def resolve_path(path: Path | None) -> Path | None:
     """
 
     return None if path is None else path.expanduser().resolve()
+
+
+def resolve_paths(paths: list[Path] | None) -> list[Path]:
+    """Resolve every ``--var-file`` exactly like :func:`resolve_path`."""
+
+    return [path.expanduser().resolve() for path in paths or []]

@@ -311,7 +311,7 @@ def _recording_tofu(tmp_path: Path, record: Path) -> Path:
     binary.write_text(
         "#!/bin/sh\n"
         'case "$1" in\n'
-        f'  plan|apply) printf "%s\\n" "$@" > "{record}" ;;\n'
+        f'  plan|apply|destroy) printf "%s\\n" "$@" > "{record}" ;;\n'
         '  show) echo "{}" ;;\n'
         "esac\n"
         "exit 0\n",
@@ -697,3 +697,209 @@ def test_failing_tofu_exits_with_its_code(
     )
     assert result.exit_code == 3
     assert "provider error" in _combined(result)
+
+
+def test_plan_passes_repeated_variables(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path, monkeypatch
+) -> None:
+    record = tmp_path / "args.txt"
+    binary = _recording_tofu(tmp_path, record)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        cli,
+        [
+            "plan",
+            "--config",
+            str(config_file),
+            "--workdir",
+            "out",
+            "--binary",
+            str(binary),
+            "--no-init",
+            "--var-file",
+            "a.tfvars",
+            "--var-file",
+            "b.tfvars",
+            "--var",
+            "region=europe-west1",
+        ],
+    )
+    assert result.exit_code == 0, _combined(result)
+
+    args = record.read_text().splitlines()
+    assert args.count("-var-file") == 2
+    assert Path(args[args.index("-var-file") + 1]).is_absolute()
+    assert args.count("-var") == 1
+    assert args[args.index("-var") + 1] == "region=europe-west1"
+
+
+def test_destroy_passes_variables(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path, monkeypatch
+) -> None:
+    record = tmp_path / "args.txt"
+    binary = _recording_tofu(tmp_path, record)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        cli,
+        [
+            "destroy",
+            "--config",
+            str(config_file),
+            "--workdir",
+            "out",
+            "--binary",
+            str(binary),
+            "--auto-approve",
+            "--var-file",
+            "prod.tfvars",
+            "--var",
+            "project=demo",
+        ],
+    )
+    assert result.exit_code == 0, _combined(result)
+
+    args = record.read_text().splitlines()
+    assert args.count("-var-file") == 1
+    assert args[args.index("-var") + 1] == "project=demo"
+
+
+def test_apply_rejects_variables_with_saved_plan(runner: CliRunner, cli, tmp_path: Path) -> None:
+    workdir = tmp_path / "out"
+    workdir.mkdir()
+    plan = tmp_path / "plan.tfplan"
+    plan.write_text("")
+
+    result = runner.invoke(
+        cli,
+        [
+            "apply",
+            "--plan-file",
+            str(plan),
+            "--workdir",
+            str(workdir),
+            "--var",
+            "project=demo",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "variables cannot be set" in _combined(result)
+
+
+def test_render_check_reports_up_to_date(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path
+) -> None:
+    workdir = tmp_path / "tofu"
+    first = runner.invoke(cli, ["render", "--config", str(config_file), "--workdir", str(workdir)])
+    assert first.exit_code == 0, _combined(first)
+
+    result = runner.invoke(
+        cli,
+        ["render", "--config", str(config_file), "--workdir", str(workdir), "--check"],
+    )
+    assert result.exit_code == 0, _combined(result)
+    assert "HCL is up to date" in result.output
+
+
+def test_render_check_detects_drift_without_writing(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path
+) -> None:
+    workdir = tmp_path / "tofu"
+    first = runner.invoke(cli, ["render", "--config", str(config_file), "--workdir", str(workdir)])
+    assert first.exit_code == 0, _combined(first)
+    (workdir / "main.tf").write_text("# edited by hand\n")
+    (workdir / "versions.tf").unlink()
+
+    result = runner.invoke(
+        cli,
+        ["render", "--config", str(config_file), "--workdir", str(workdir), "--check"],
+    )
+    assert result.exit_code == 1
+    output = _combined(result)
+    assert "HCL is out of date (2 of 4 files)" in output
+    assert "main.tf" in output
+    assert "versions.tf" in output
+    # --check never repairs the workdir.
+    assert (workdir / "main.tf").read_text() == "# edited by hand\n"
+    assert not (workdir / "versions.tf").exists()
+
+
+def test_render_check_missing_workdir_is_out_of_date(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path
+) -> None:
+    result = runner.invoke(
+        cli,
+        [
+            "render",
+            "--config",
+            str(config_file),
+            "--workdir",
+            str(tmp_path / "missing"),
+            "--check",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "HCL is out of date" in _combined(result)
+
+
+def test_render_diff_shows_the_change(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path
+) -> None:
+    workdir = tmp_path / "tofu"
+    first = runner.invoke(cli, ["render", "--config", str(config_file), "--workdir", str(workdir)])
+    assert first.exit_code == 0, _combined(first)
+    (workdir / "main.tf").write_text("# edited by hand\n")
+
+    result = runner.invoke(
+        cli,
+        ["render", "--config", str(config_file), "--workdir", str(workdir), "--diff"],
+    )
+    assert result.exit_code == 1
+    output = _combined(result)
+    assert "--- a/main.tf" in output
+    assert "+++ b/main.tf" in output
+    assert "-resource" in output or "+resource" in output
+
+
+def test_render_stdout_prints_without_writing(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path
+) -> None:
+    workdir = tmp_path / "tofu"
+    result = runner.invoke(
+        cli,
+        [
+            "render",
+            "--config",
+            str(config_file),
+            "--workdir",
+            str(workdir),
+            "--stdout",
+            "main.tf",
+        ],
+    )
+    assert result.exit_code == 0, _combined(result)
+    assert "google_storage_bucket" in result.output
+    assert not workdir.exists()
+
+
+def test_render_stdout_rejects_unknown_file(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path
+) -> None:
+    result = runner.invoke(
+        cli,
+        ["render", "--config", str(config_file), "--stdout", "nope.tf"],
+    )
+    assert result.exit_code == 1
+    assert "no rendered file named 'nope.tf'" in _combined(result)
+
+
+def test_render_check_and_stdout_conflict(
+    runner: CliRunner, cli, config_file: Path, tmp_path: Path
+) -> None:
+    result = runner.invoke(
+        cli,
+        ["render", "--config", str(config_file), "--check", "--stdout", "main.tf"],
+    )
+    assert result.exit_code == 1
+    assert "cannot be combined" in _combined(result)
