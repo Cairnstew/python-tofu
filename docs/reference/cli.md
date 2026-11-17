@@ -14,7 +14,7 @@ Every command that loads a stack (`render`, `init`, `validate`, `doctor`, `plan`
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--config`, `-c` | `infra.py` | Python module exposing a module-level `stack` |
+| `--config`, `-c` | `infra.py` | Stack definition: a Python module exposing `stack`, a JSON file, or a `.nix` file evaluating to the schema |
 | `--workdir`, `-w` | `.tofu/<stack-name>` | Directory where HCL and state are written |
 | `--stack-name` | config file stem, or the stack's `name` | State name; drives the default workdir and GCS prefix |
 | `--binary` | `tofu` | OpenTofu binary to invoke |
@@ -22,6 +22,10 @@ Every command that loads a stack (`render`, `init`, `validate`, `doctor`, `plan`
 | `--limits` | policy default (`error` for GCP) | Enforce limits: `error`, `warn` or `off` |
 | `--usage` | `stack` | `stack` uses declared resources; `live` also reads existing infrastructure |
 | `--fail-on-unknown` | false | Fail when a limit could not be measured (ignored with `--limits off`) |
+
+A `.json` config is read directly; a `.nix` config is evaluated with
+`nix eval --json` and then validated by the same provider models. See
+[`nix-stacks.md`](nix-stacks.md) for the Nix authoring surface.
 
 `output` reads an existing workdir and accepts `--config`, `--stack-name`,
 `--workdir`, `--binary`, `--verbose` and `--json/--no-json`. It never renders.

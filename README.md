@@ -253,6 +253,36 @@ Supported sections are `buckets`, `subscriptions`, `topics`,
 be imported by the provider, and project IAM bindings are excluded because an
 authoritative IAM sweep can remove human access.
 
+## Nix integration
+
+The repo is a flake input: it exports `nixosModules.default`, an overlay, the
+CLI packages and helpers for authoring a stack in Nix.
+
+```nix
+{
+  inputs.python-tofu.url = "github:Cairnstew/python-tofu";
+
+  # NixOS: declare the cloud stack and reconcile it on rebuild.
+  services.python-tofu = {
+    enable = true;
+    stack = {
+      provider.project = "my-project";
+      buckets.artifacts = { location = "EU"; };
+    };
+    settings = {
+      command = "apply";
+      autoApprove = true;
+    };
+  };
+}
+```
+
+The stack is evaluated at build time into JSON and applied on activation;
+`restartTriggers` make a later `nixos-rebuild switch` re-run it. Nix can also
+author a standalone `.nix` config for the CLI, which accepts `.py`, `.json` and
+`.nix`. See [Nix-authored stacks](docs/reference/nix-stacks.md) and the
+[NixOS integration guide](docs/guides/nixos-integration.md).
+
 ## Providers
 
 The package is split into a provider-agnostic engine and per-provider branches:
@@ -319,6 +349,7 @@ first entry; `pre-commit run --all-files` runs the same ruff, mypy and
 - [Limits reference](docs/reference/limits.md)
 - [DSL reference](docs/reference/dsl.md)
 - [Module reference](docs/reference/module.md)
+- [Nix-authored stacks](docs/reference/nix-stacks.md)
 - [CI reference](docs/reference/ci.md)
 - [NixOS integration](docs/guides/nixos-integration.md)
 - [GCP bootstrap example](examples/gcp_bootstrap/README.md)

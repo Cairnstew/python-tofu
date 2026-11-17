@@ -13,7 +13,14 @@ from python_tofu.core.provider import Provider
 
 ConfigOption = Annotated[
     Path,
-    typer.Option("--config", "-c", help="Python module exposing a module-level `stack`."),
+    typer.Option(
+        "--config",
+        "-c",
+        help=(
+            "Stack definition: a Python module exposing `stack`, a JSON file, or a "
+            "Nix file evaluating to the stack schema."
+        ),
+    ),
 ]
 WorkdirOption = Annotated[
     Path | None,

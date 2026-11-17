@@ -8,7 +8,11 @@ class TofuError(Exception):
 
 
 class ConfigError(TofuError):
-    """The Python infrastructure module could not be loaded or is invalid."""
+    """The infrastructure config could not be loaded or is invalid.
+
+    Configs may be Python, JSON or Nix; this error is the shared failure type
+    for all three.
+    """
 
 
 class RenderError(TofuError):

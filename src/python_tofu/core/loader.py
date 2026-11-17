@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -11,8 +12,12 @@ from typing import Any, TypeVar
 
 from python_tofu.core.exceptions import ConfigError
 from python_tofu.core.models import BaseStack
+from python_tofu.core.nix import eval_nix_json
 
 StackT = TypeVar("StackT", bound=BaseStack)
+
+#: Extensions the loader understands, in error text order.
+SUPPORTED_SUFFIXES = (".py", ".json", ".nix")
 
 
 def _load_module(path: Path) -> ModuleType:
@@ -53,6 +58,11 @@ def _coerce(candidate: Any, path: Path, stack_type: type[StackT]) -> StackT:
     if isinstance(candidate, stack_type):
         return candidate
     if isinstance(candidate, dict):
+        # ``{ stack = ...; }`` is the convention every authoring front-end
+        # shares, so a Nix/JSON wrapper is unwrapped before validation. A bare
+        # mapping is accepted too.
+        if "stack" in candidate and isinstance(candidate["stack"], dict):
+            candidate = candidate["stack"]
         try:
             return stack_type.model_validate(candidate)
         except Exception as exc:  # noqa: BLE001 - re-raise as a config error
@@ -63,18 +73,34 @@ def _coerce(candidate: Any, path: Path, stack_type: type[StackT]) -> StackT:
     )
 
 
-def load_stack(path: str | Path, stack_type: type[StackT]) -> StackT:
-    """Import ``path`` and return its module-level ``stack`` as ``stack_type``.
+def _load_data(path: Path) -> Any:
+    """Load a non-Python config file into the provider's JSON schema."""
 
-    The config module may either construct the provider stack directly or
-    expose a plain mapping, which is validated on load.
+    if path.suffix == ".json":
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ConfigError(f"cannot read JSON config {path}: {exc}") from exc
+    return eval_nix_json(path)
+
+
+def load_stack(path: str | Path, stack_type: type[StackT]) -> StackT:
+    """Load ``path`` and return its ``stack`` as ``stack_type``.
+
+    ``.py`` configs expose a module-level ``stack``. ``.json`` and ``.nix``
+    configs evaluate to either the stack mapping or ``{ "stack": ... }``; both
+    are validated by the same provider models, so the guardrails are identical
+    regardless of the authoring language.
     """
 
     resolved = Path(path).expanduser().resolve()
     if not resolved.is_file():
         raise ConfigError(f"config file not found: {resolved}")
+    if resolved.suffix not in SUPPORTED_SUFFIXES:
+        raise ConfigError(f"config file must be a .py, .json or .nix file: {resolved}")
+
     if resolved.suffix != ".py":
-        raise ConfigError(f"config file must be a .py module: {resolved}")
+        return _coerce(_load_data(resolved), resolved, stack_type)
 
     module = _load_module(resolved)
     if not hasattr(module, "stack"):

@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import Field, field_validator, model_validator
 
+from python_tofu.core.hcl import is_reference_template
 from python_tofu.core.limits import LimitMode
 from python_tofu.core.models import BaseStack
 from python_tofu.providers.gcp.models import (
@@ -207,6 +208,9 @@ class GcpStack(BaseStack):
             *[item.project for item in self.pubsub_topics],
             *[item.project for item in self.pubsub_subscriptions],
         }
+        # A "${...}" value is resolved by OpenTofu, not against the declared
+        # set; it is not a literal project id and must not fail this check.
+        referenced = {item for item in referenced if not is_reference_template(item)}
         missing = sorted(referenced - known)
         if missing:
             raise ValueError(
@@ -216,7 +220,10 @@ class GcpStack(BaseStack):
             )
 
         known_buckets = {bucket.name for bucket in self.buckets} | set(self.external_buckets)
-        missing_buckets = sorted({item.bucket for item in self.bucket_objects} - known_buckets)
+        missing_buckets = sorted(
+            {item.bucket for item in self.bucket_objects if not is_reference_template(item.bucket)}
+            - known_buckets
+        )
         if missing_buckets:
             raise ValueError(
                 "bucket objects reference unknown buckets: "
@@ -228,7 +235,8 @@ class GcpStack(BaseStack):
             {
                 item.source_bucket
                 for item in self.cloud_run_functions
-                if item.source_bucket not in known_buckets
+                if not is_reference_template(item.source_bucket)
+                and item.source_bucket not in known_buckets
             }
         )
         if missing_sources:
@@ -243,7 +251,8 @@ class GcpStack(BaseStack):
             {
                 item.topic
                 for item in self.pubsub_subscriptions
-                if item.topic.rsplit("/", 1)[-1] not in known_topics
+                if not is_reference_template(item.topic)
+                and item.topic.rsplit("/", 1)[-1] not in known_topics
             }
         )
         if missing_topics:
@@ -258,6 +267,7 @@ class GcpStack(BaseStack):
                 item.dead_letter.topic
                 for item in self.pubsub_subscriptions
                 if item.dead_letter is not None
+                and not is_reference_template(item.dead_letter.topic)
                 and item.dead_letter.topic.rsplit("/", 1)[-1] not in known_topics
             }
         )
@@ -270,7 +280,11 @@ class GcpStack(BaseStack):
 
         known_services = {service.name for service in self.cloud_run_services}
         missing_push = sorted(
-            {item.push_service for item in self.pubsub_subscriptions if item.push_service}
+            {
+                item.push_service
+                for item in self.pubsub_subscriptions
+                if item.push_service and not is_reference_template(item.push_service)
+            }
             - known_services
         )
         if missing_push:
@@ -285,11 +299,13 @@ class GcpStack(BaseStack):
             account
             for service in self.cloud_run_services
             for account in service.invoker_service_accounts
-            if "@" not in account
+            if "@" not in account and not is_reference_template(account)
         } | {
             item.push_service_account
             for item in self.pubsub_subscriptions
-            if item.push_service_account and "@" not in item.push_service_account
+            if item.push_service_account
+            and "@" not in item.push_service_account
+            and not is_reference_template(item.push_service_account)
         }
         missing_accounts = sorted(referenced_accounts - account_ids)
         if missing_accounts:

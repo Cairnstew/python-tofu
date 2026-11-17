@@ -11,6 +11,7 @@ import mimetypes
 import re
 
 from python_tofu.core.exceptions import RenderError
+from python_tofu.core.hcl import is_reference_template
 
 # GCP identifiers are stricter than "any non-empty string"; validating early
 # turns a mid-apply API error into a local traceback.
@@ -30,13 +31,31 @@ PUBSUB_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9._~+%-]{2,254}$")
 
 
 def validate_role(role: str) -> str:
-    """Accept predefined roles (``roles/...``) and project custom roles."""
+    """Accept predefined roles (``roles/...``), project custom roles or a reference."""
 
+    if is_reference_template(role):
+        return role
     if not (role.startswith("roles/") or "/roles/" in role):
         raise ValueError(
             f"role must be a predefined role (roles/...) or a project custom role: {role!r}"
         )
     return role
+
+
+def literal_identifier(value: str, field: str, *, reason: str) -> str:
+    """Reject an HCL interpolation in a field that becomes an address or label.
+
+    A computed value in such a field would be mangled by ``slug()`` and the
+    resource address would silently change. Nix-authored stacks have no
+    :class:`~python_tofu.core.hcl.Raw`, so the error explains the alternative.
+    """
+
+    if is_reference_template(value):
+        raise ValueError(
+            f"{field} must be a literal, not an HCL interpolation ({value!r}); "
+            f"{reason} Move the computed part into an attribute or an `output`."
+        )
+    return value
 
 
 def slug(value: str) -> str:

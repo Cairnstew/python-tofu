@@ -40,11 +40,57 @@ def test_missing_file_raises(tmp_path: Path) -> None:
         load_stack(tmp_path / "missing.py")
 
 
-def test_non_python_file_raises(tmp_path: Path) -> None:
+def test_unsupported_file_type_raises(tmp_path: Path) -> None:
     path = tmp_path / "infra.yaml"
     path.write_text("provider: {}\n")
-    with pytest.raises(ConfigError, match="must be a .py module"):
+    with pytest.raises(ConfigError, match=r"must be a \.py, \.json or \.nix file"):
         load_stack(path)
+
+
+def test_loads_json_stack(tmp_path: Path) -> None:
+    path = tmp_path / "stack.json"
+    path.write_text(
+        """\
+{
+  "stack": {
+    "provider": {"project": "demo-project"},
+    "buckets": [{"project": "demo-project", "name": "demo-json"}]
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    stack = load_stack(path)
+    assert stack.provider.project == "demo-project"
+    assert [bucket.name for bucket in stack.buckets] == ["demo-json"]
+
+
+def test_loads_bare_json_mapping(tmp_path: Path) -> None:
+    path = tmp_path / "stack.json"
+    path.write_text(
+        '{"provider": {"project": "demo-project"}}',
+        encoding="utf-8",
+    )
+    stack = load_stack(path)
+    assert stack.provider.project == "demo-project"
+
+
+def test_invalid_json_is_wrapped(tmp_path: Path) -> None:
+    path = tmp_path / "stack.json"
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ConfigError, match="cannot read JSON config"):
+        load_stack(path)
+
+
+def test_nix_config_uses_the_evaluator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "stack.nix"
+    path.write_text('{ stack = { provider.project = "demo-project"; }; }\n', encoding="utf-8")
+    monkeypatch.setattr(
+        "python_tofu.core.loader.eval_nix_json",
+        lambda candidate: {"provider": {"project": "demo-project"}},
+    )
+    stack = load_stack(path)
+    assert stack.provider.project == "demo-project"
 
 
 def test_missing_stack_raises(tmp_path: Path) -> None:

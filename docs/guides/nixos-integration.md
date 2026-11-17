@@ -42,6 +42,44 @@
 The unit is `oneshot`; run `systemctl start python-tofu` after a deploy, or set
 `schedule` for periodic reconciliation.
 
+## Declare the stack in Nix
+
+Instead of a separate Python file, declare the stack with `stack` or
+`stackFile`. It is evaluated at build time and written to the store as JSON;
+the service applies it on activation.
+
+```nix
+{ ... }: {
+  services.python-tofu = {
+    enable = true;
+    stack = {
+      provider = {
+        project = "my-project";
+        region = "europe-west1";
+      };
+      buckets.artifacts = {
+        project = "my-project";
+        location = "EU";
+      };
+    };
+
+    settings = {
+      command = "apply";
+      autoApprove = true;   # required for an unattended apply
+    };
+  };
+}
+```
+
+`stackFile = ./infra.nix` is the same thing when the declaration needs
+`imports` or `mkMerge`. The module's `restartTriggers` restart the boot-time
+oneshot when the evaluated stack changes, so `nixos-rebuild switch` reconciles
+the infrastructure.
+
+`stack`, `stackFile` and `settings.config` are mutually exclusive. See
+[`../reference/nix-stacks.md`](../reference/nix-stacks.md) for the authoring
+surface, keyed sections and reference strings.
+
 ## Scheduling
 
 ```nix
@@ -118,6 +156,12 @@ already contains the mirrored `hashicorp/google` provider
 ```bash
 nix run .#with-tofu -- render --config infra.py --workdir .tofu/demo
 nix run .#with-tofu -- plan   --config infra.py --workdir .tofu/demo
+```
+
+For `--config ./infra.nix`, use the variant that also carries `nix`:
+
+```bash
+nix run .#with-tofu-nix -- render --config infra.nix --workdir .tofu/demo
 ```
 
 To use the same toolchain in a service, put the bundle on the unit's path:

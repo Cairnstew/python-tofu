@@ -13,12 +13,29 @@ invalid Terraform.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Iterable
+
+#: An HCL string template, e.g. ``"${google_storage_bucket.main.name}"``.
+#: Nix-authored stacks cannot produce :class:`Raw`, so computed values arrive as
+#: ordinary strings that already contain an interpolation.
+#: ``(?<!\$)`` keeps ``$${escaped}`` (HCL's literal ``${``) out of the match.
+_REFERENCE_TEMPLATE = re.compile(r"(?<!\$)\$\{[^}]+\}")
 
 
 class HclError(ValueError):
     """Raised when a value cannot be represented as HCL."""
+
+
+def is_reference_template(value: Any) -> bool:
+    """Return true when ``value`` is a string carrying an HCL interpolation.
+
+    This is the single predicate validators and renderers consult. A plain
+    ``"literal"`` is not a template; ``"${resource.type.name.attr}"`` is.
+    """
+
+    return isinstance(value, str) and _REFERENCE_TEMPLATE.search(value) is not None
 
 
 @dataclass(frozen=True)

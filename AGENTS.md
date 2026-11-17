@@ -52,13 +52,15 @@ must be added to its `needs` list or it will not be required.
 | `nix/default.nix` | Package derivation (`mkApplication`) + completions + provider-version env |
 | `nix/gen-completions.py` | Generates bash/zsh/fish completions from Typer templates |
 | `nix/provider-versions.nix` | Single source for the provider versions Nix mirrors |
-| `nix/module.nix` | NixOS module — oneshot service, optional timer |
+| `nix/stack.nix` | Nix option tree mirroring `GcpStack`; evaluated to JSON, never HCL |
+| `nix/module.nix` | NixOS module — oneshot service, optional timer, Nix-declared `stack` |
 | `nix/home-module.nix` | Home Manager module — user env package |
 | `pyproject.toml` | Python metadata, dependencies, CLI entry point |
 | `uv.lock` | uv lock file — drives the uv2nix overlay |
 | `src/python_tofu/` | Application package |
 | `src/python_tofu/core/` | Provider-agnostic engine: HCL, loader, runner, renderer base, CLI factory |
 | `src/python_tofu/core/provider.py` | `Provider` plugin contract and registry |
+| `src/python_tofu/core/nix.py` | `nix eval --json` ingest for `.nix` stack configs |
 | `src/python_tofu/core/limits.py` | `Limit`/`LimitPolicy`/`Usage`/`Throttler`, reports |
 | `src/python_tofu/core/prune.py` | `PrunableResource`/`PrunePlan` + scratch-module `Reaper` |
 | `src/python_tofu/core/toolchain.py` | `tofu` version, provider mirror/cache and workdir preflight checks |
@@ -151,6 +153,12 @@ locked toolchain as the dev shell.
     extensions use the `python_tofu.commands` / `python_tofu.providers` entry
     points. Keep `build_app(provider, ...)` provider-agnostic and let a failing
     plugin warn rather than abort startup.
+14. **Nix authors data, never HCL** — `nix/stack.nix` must stay a mirror of the
+    `GcpStack` fields; the evaluated JSON goes through the same Pydantic
+    models. Add a section to both `GcpStack` and `nix/stack.nix` together, and
+    keep `checks.render-nix-example` byte-identical to the Python example.
+    Identity fields that become HCL labels stay literal; computed values are
+    `${...}` strings in free-form/cross-reference fields.
 
 ## Architecture notes
 

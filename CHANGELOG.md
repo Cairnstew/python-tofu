@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Nix-authored stacks. `nix/stack.nix` mirrors the `GcpStack` fields as a Nix
+  module option tree, with sections keyed by a local name whose key fills the
+  resource identity field (`buckets.artifacts` → `name = "artifacts"`). The
+  evaluated JSON goes through the same Pydantic models, so limits, `prune`,
+  `doctor` and rendering are unchanged. Exposed through the flake as
+  `lib.stackModule`, `lib.evalStack`, `lib.mkStackJson` and `lib.mkStackFile`.
+- `--config` accepts `.json` and `.nix` as well as `.py`. A `.nix` config is
+  evaluated with `nix eval --json` (with `--impure` only when it uses
+  `<nixpkgs>`/`builtins.getFlake`), and the result is validated exactly like a
+  Python stack. `packages.<system>.with-tofu-nix` carries the `nix` binary for
+  the standalone form.
+- `services.python-tofu.stack` and `stackFile`: declare the cloud stack in
+  Nix. The module evaluates it at build time and writes JSON to the store, so
+  no `nix` binary is needed at activation. `settings.autoApprove` exposes
+  `--auto-approve` for `apply`/`destroy`, and `restartTriggers` make a rebuild
+  restart the boot-time oneshot so the declaration is re-applied.
+- The flake exposes `nixosModules.python-tofu` and
+  `homeManagerModules.python-tofu` aliases alongside `default`, so a flake
+  input can be imported by its own name.
+- Reference strings (`"${resource.type.name.attr}"`) are accepted in
+  free-form and cross-reference fields (`BucketObject.bucket`,
+  `PubSubSubscription.topic`, IAM principals, service accounts, secrets).
+  Identity fields that become HCL labels reject them with a targeted error.
+- Flake checks: `stack-eval` and `render-nix-example` (a Nix-authored stack
+  must render byte-for-byte like the Python example), plus the Nix stack in
+  `validate-examples`.
+
 - `--var NAME=VALUE` and repeatable `--var-file` on `plan`, `apply` and
   `destroy`, matching OpenTofu's own flags. Relative files are resolved against
   the caller's directory like `--plan-file`. `apply --plan-file` rejects
