@@ -19,10 +19,11 @@ from python_tofu.core.cli.options import (
     StackNameOption,
     UsageModeOption,
     VarFileOption,
+    VarOption,
     VerboseOption,
     WorkdirOption,
     make_context,
-    resolve_path,
+    resolve_paths,
 )
 from python_tofu.core.exceptions import TofuError
 from python_tofu.core.provider import Provider
@@ -62,6 +63,7 @@ def create_app(provider: Provider) -> typer.Typer:
         ),
         no_init: bool = typer.Option(False, "--no-init", help="Skip `tofu init` before planning."),
         var_file: VarFileOption = None,
+        vars: VarOption = None,
         json_output: bool = typer.Option(False, "--json", help="Print the summary as JSON."),
         exit_code: bool = typer.Option(
             False,
@@ -91,7 +93,10 @@ def create_app(provider: Provider) -> typer.Typer:
         stack, _ = command.prepare()
         sections = command.prune_sections(
             stack,
-            prune,
+            # A destroy plan never prunes: the stack's own `prune.enabled`
+            # must not turn a plain `plan --destroy` into an error. An explicit
+            # --prune/--prune-section still conflicts and is rejected below.
+            False if destroy and prune is None else prune,
             prune_section,
             allow_service_accounts=allow_service_accounts,
         )
@@ -106,7 +111,11 @@ def create_app(provider: Provider) -> typer.Typer:
         # relative ``--workdir`` does not nest it inside the workdir a second time.
         plan_file = (command.ctx.workdir / "plan.tfplan").resolve()
         command.run_tofu(
-            "plan", destroy=destroy, var_file=resolve_path(var_file), plan_file=plan_file
+            "plan",
+            destroy=destroy,
+            var_file=resolve_paths(var_file),
+            vars=vars or (),
+            plan_file=plan_file,
         )
         command.prune(stack, sections, dry_run=True)
 

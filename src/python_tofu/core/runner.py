@@ -12,6 +12,28 @@ from python_tofu.core.exceptions import TofuNotInstalledError
 from python_tofu.core.results import CommandResult
 
 
+def _variable_args(
+    var_files: str | Path | Sequence[str | Path] | None,
+    vars: Sequence[str],
+) -> list[str]:
+    """Expand ``-var-file``/``-var`` pairs, accepting one file or many.
+
+    A plain string or ``Path`` is treated as a single file so existing callers
+    that passed ``var_file="prod.tfvars"`` keep working when the CLI moves to
+    repeated options.
+    """
+
+    args: list[str] = []
+    if var_files is not None:
+        files: Sequence[str | Path]
+        files = [var_files] if isinstance(var_files, (str, Path)) else var_files
+        for path in files:
+            args.extend(["-var-file", str(path)])
+    for value in vars:
+        args.extend(["-var", value])
+    return args
+
+
 class TofuRunner:
     """Run ``tofu`` commands in a working directory and capture their output."""
 
@@ -63,14 +85,14 @@ class TofuRunner:
         self,
         plan_file: str | Path | None = None,
         destroy: bool = False,
-        var_file: str | Path | None = None,
+        var_file: str | Path | Sequence[str | Path] | None = None,
+        vars: Sequence[str] = (),
         extra: Sequence[str] = (),
     ) -> CommandResult:
         args = ["plan", "-input=false", "-no-color"]
         if destroy:
             args.append("-destroy")
-        if var_file is not None:
-            args.extend(["-var-file", str(var_file)])
+        args.extend(_variable_args(var_file, vars))
         if plan_file is not None:
             args.extend(["-out", str(plan_file)])
         args.extend(extra)
@@ -80,14 +102,14 @@ class TofuRunner:
         self,
         auto_approve: bool = False,
         plan_file: str | Path | None = None,
-        var_file: str | Path | None = None,
+        var_file: str | Path | Sequence[str | Path] | None = None,
+        vars: Sequence[str] = (),
         extra: Sequence[str] = (),
     ) -> CommandResult:
         args = ["apply", "-no-color"]
         if auto_approve:
             args.append("-auto-approve")
-        if var_file is not None:
-            args.extend(["-var-file", str(var_file)])
+        args.extend(_variable_args(var_file, vars))
         if plan_file is not None:
             args.append(str(plan_file))
         args.extend(extra)
@@ -96,14 +118,14 @@ class TofuRunner:
     def destroy(
         self,
         auto_approve: bool = False,
-        var_file: str | Path | None = None,
+        var_file: str | Path | Sequence[str | Path] | None = None,
+        vars: Sequence[str] = (),
         extra: Sequence[str] = (),
     ) -> CommandResult:
         args = ["destroy", "-no-color"]
         if auto_approve:
             args.append("-auto-approve")
-        if var_file is not None:
-            args.extend(["-var-file", str(var_file)])
+        args.extend(_variable_args(var_file, vars))
         args.extend(extra)
         return self.run(*args)
 

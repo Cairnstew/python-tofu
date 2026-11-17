@@ -56,6 +56,41 @@ def test_plan_arguments(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None
     ]
 
 
+def test_repeated_var_files_and_vars(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        seen.append(command)
+        return _completed(command)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    runner = TofuRunner(tmp_path)
+    runner.plan(var_file=["a.tfvars", "b.tfvars"], vars=["region=eu", "zone=us"])
+    runner.destroy(var_file="prod.tfvars", vars=["project=demo"])
+
+    assert seen[0][1:] == [
+        "plan",
+        "-input=false",
+        "-no-color",
+        "-var-file",
+        "a.tfvars",
+        "-var-file",
+        "b.tfvars",
+        "-var",
+        "region=eu",
+        "-var",
+        "zone=us",
+    ]
+    assert seen[1][1:] == [
+        "destroy",
+        "-no-color",
+        "-var-file",
+        "prod.tfvars",
+        "-var",
+        "project=demo",
+    ]
+
+
 def test_apply_and_destroy_flags(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     seen: list[list[str]] = []
 
