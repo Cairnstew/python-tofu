@@ -18,6 +18,30 @@ PROJECT = "demo-project"
 BUCKET = "demo-state"
 
 
+@pytest.fixture(autouse=True)
+def _fake_tofu_binary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the tofu check at a script instead of the host's OpenTofu.
+
+    CI's unit job (``test-unit.yml``) installs no OpenTofu, so resolving a real
+    ``tofu`` from ``PATH`` made the CLI tests pass only inside the dev shell.
+    Driving ``PYTHON_TOFU_BINARY`` keeps the real ``toolchain.check_binary``
+    path under test while making the suite independent of the host toolchain;
+    ``tests/unit/test_toolchain.py`` covers version and constraint handling.
+    """
+
+    binary = tmp_path / "tofu"
+    binary.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        "  version) printf '%s\\n' '{\"terraform_version\": \"1.12.1\"}' ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    binary.chmod(0o755)
+    monkeypatch.setenv("PYTHON_TOFU_BINARY", str(binary))
+    return binary
+
+
 # ── value objects ─────────────────────────────────────────────────────
 def test_status_symbols() -> None:
     assert CheckStatus.OK.symbol == "✓"
