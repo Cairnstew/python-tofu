@@ -20,12 +20,17 @@ derivations via pure Nix code and the repo builds with `nix build .#default`.
 | Remote | `origin` → `github.com/Cairnstew/python-tofu` (public) |
 | Default branch | `main` |
 | CI entry point | `.github/workflows/ci.yml` — the only `push`/`pull_request` workflow |
+| Branch protection | `main` ruleset: PR + required check `ci-success`, linear history, no force push/delete |
 | Local equivalent | `just check` (lint + typecheck + unit/integration tests + `nix flake check --no-build`) |
 
 Every other workflow is `workflow_call` only and is invoked by `ci.yml`. CI
 triggers on pushes to `main` and on pull requests, so work on a branch needs a
 pull request to be tested. No repository secrets are used; workflows rely on
 `GITHUB_TOKEN` and OIDC. See `docs/reference/ci.md` for the job table.
+
+`main` only accepts squash or rebase merges of a pull request whose
+`ci-success` gate passed. That aggregate job always reports, so a new CI job
+must be added to its `needs` list or it will not be required.
 
 ## Reference files
 
