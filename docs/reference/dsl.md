@@ -71,6 +71,7 @@ passed.
 | `sections` | `tuple[str, ...]` | `("all",)` | `all`, or any of `buckets`, `subscriptions`, `topics`, `project_iam`, `service_accounts`, `apis`. `project_iam` is never implied by `all` |
 | `include_service_accounts` | `bool` | `false` | First key for the service-account gate |
 | `protected_service_accounts` | `tuple[str, ...]` | `()` | Account ids/emails prune must never delete |
+| `protected_iam_roles` | `tuple[str, ...]` | `("roles/owner",)` | IAM roles prune must never remove; `roles/owner` is always included |
 | `allow_raw_hcl` | `bool` | `false` | Permit pruning when `extra_files` is used (raw HCL is invisible to discovery) |
 
 ```python
@@ -107,8 +108,9 @@ Supported sections and safety rules:
 - `project_iam` — `google_project_iam_member`; only bindings whose member is a
   `serviceAccount:` declared in this stack are considered. Conditional bindings,
   `user:`/`group:`/`domain:`/`allUsers`, `roles/owner` and the active identity
-  are reported and left alone. It is never implied by `all` and is only run by
-  `python-tofu prune`; `apply --prune` always skips it because IAM is
+  are reported and left alone. `protected_iam_roles` adds roles to skip;
+  `roles/owner` is always protected. It is never implied by `all` and is only
+  run by `python-tofu prune`; `apply --prune` always skips it because IAM is
   eventually consistent.
 - `apis` — `google_project_service`; essential APIs (Cloud Asset Inventory,
   IAM, Cloud Resource Manager, Service Usage, Storage, logging, monitoring,

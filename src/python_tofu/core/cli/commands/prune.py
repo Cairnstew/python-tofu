@@ -52,6 +52,11 @@ def create_app(provider: Provider) -> typer.Typer:
         auto_approve: bool = typer.Option(
             False, "--auto-approve", help="Skip the deletion confirmation."
         ),
+        explain: bool = typer.Option(
+            False,
+            "--explain",
+            help="List every skipped IAM binding with its reason.",
+        ),
         allow_service_accounts: AllowServiceAccountsOption = False,
     ) -> None:
         command = BaseCommand(
@@ -90,6 +95,12 @@ def create_app(provider: Provider) -> typer.Typer:
             sections=selected,
             allow_service_accounts=allow_service_accounts,
         )
-        command.prune(stack, sections, dry_run=not apply_changes, auto_approve=auto_approve)
+        command.prune(
+            stack,
+            sections,
+            dry_run=not apply_changes,
+            auto_approve=auto_approve,
+            explain=explain,
+        )
 
     return app

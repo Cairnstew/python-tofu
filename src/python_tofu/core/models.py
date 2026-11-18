@@ -134,6 +134,22 @@ class PruneConfig(TofuModel):
             "of the active credential's own identity."
         ),
     )
+    protected_iam_roles: tuple[str, ...] = Field(
+        default=("roles/owner",),
+        description=(
+            "IAM roles prune must never remove. roles/owner is always included, "
+            "even when this tuple is empty."
+        ),
+    )
+
+    @field_validator("protected_iam_roles")
+    @classmethod
+    def _owner_is_always_protected(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        cleaned = tuple(dict.fromkeys(item.strip() for item in value))
+        if any(not item for item in cleaned):
+            raise ValueError("protected_iam_roles entries must not be empty")
+        owner = "roles/owner"
+        return cleaned if owner in cleaned else (owner, *cleaned)
 
     @field_validator("protected_service_accounts")
     @classmethod

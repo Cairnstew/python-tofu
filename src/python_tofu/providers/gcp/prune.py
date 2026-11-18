@@ -66,9 +66,6 @@ SERVICE_USAGE_BASE = "https://serviceusage.googleapis.com/v1"
 PUBSUB_BASE = "https://pubsub.googleapis.com/v1"
 CRM_BASE = "https://cloudresourcemanager.googleapis.com/v1"
 
-#: Project roles a prune must never remove, even for a managed principal.
-PROTECTED_IAM_ROLES = frozenset({"roles/owner"})
-
 #: APIs the wrapper or the cloud itself needs to finish a prune; never disable.
 #: ``GcpProvider.default_apis`` adds to this set (see ``_api_plan``).
 PROTECTED_APIS = frozenset(DEFAULT_APIS)
@@ -407,16 +404,17 @@ def get_project_iam_bindings(project: str, token: str) -> list[dict[str, Any]]:
 
 def _project_iam_plan(
     stack: GcpStack, token: str, protected: frozenset[str]
-) -> tuple[list[PrunableResource], dict[str, int]]:
+) -> tuple[list[PrunableResource], dict[str, int], list[str]]:
     """Undeclared project bindings for service accounts declared in this stack.
 
     Anything else is reported and left alone: human/group/domain members,
-    ``allUsers``, conditional bindings, ``roles/owner``, the active identity and
+    ``allUsers``, conditional bindings, protected roles, the active identity and
     service accounts the stack does not declare.
     """
 
     project = stack.provider.project
     declared = _declared_project_iam(stack, project)
+    protected_roles = {role.lower() for role in stack.prune.protected_iam_roles}
     managed = {
         f"{account.account_id}@{account.project}.iam.gserviceaccount.com".lower()
         for account in stack.service_accounts
@@ -429,28 +427,39 @@ def _project_iam_plan(
         "protected-role": 0,
         "protected-identity": 0,
     }
+    details: list[str] = []
+
+    def note(reason: str, role: str, member: str) -> None:
+        details.append(f"{member} {role} ({reason})")
 
     for binding in get_project_iam_bindings(project, token):
         role = str(binding.get("role") or "")
         members = binding.get("members") or []
         if binding.get("condition"):
-            skipped["conditional"] += len(members)
+            for raw_member in members:
+                skipped["conditional"] += 1
+                note("conditional", role, str(raw_member))
             continue
-        if role in PROTECTED_IAM_ROLES:
-            skipped["protected-role"] += len(members)
+        if role.lower() in protected_roles:
+            for raw_member in members:
+                skipped["protected-role"] += 1
+                note("protected-role", role, str(raw_member))
             continue
         for raw_member in members:
             member = str(raw_member)
             if not member.startswith("serviceAccount:"):
                 skipped["non-service-account"] += 1
+                note("non-service-account", role, member)
                 continue
             email = member.split(":", 1)[1].lower()
             account_id = email.partition("@")[0]
             if email in protected or account_id in protected:
                 skipped["protected-identity"] += 1
+                note("protected-identity", role, member)
                 continue
             if email not in managed:
                 skipped["not-declared"] += 1
+                note("not-declared", role, member)
                 continue
             if (role.lower(), member.lower()) in declared:
                 continue
@@ -472,7 +481,7 @@ def _project_iam_plan(
                     description=f"IAM binding {role} for {member}",
                 )
             )
-    return found, skipped
+    return found, skipped, details
 
 
 def discover(stack: GcpStack, sections: tuple[str, ...]) -> PrunePlan:
@@ -488,6 +497,7 @@ def discover(stack: GcpStack, sections: tuple[str, ...]) -> PrunePlan:
     token = access_token(stack)
     resources: list[PrunableResource] = []
     warnings: list[str] = []
+    skipped_details: list[str] = []
     if stack.extra_files:
         warnings.append("extra_files are not considered declared: raw HCL resources may be pruned")
     project = stack.provider.project
@@ -512,8 +522,9 @@ def discover(stack: GcpStack, sections: tuple[str, ...]) -> PrunePlan:
     if "buckets" in sections:
         resources.extend(_bucket_plan(stack, token))
     if "project_iam" in sections:
-        iam_resources, iam_skipped = _project_iam_plan(stack, token, protected)
+        iam_resources, iam_skipped, iam_details = _project_iam_plan(stack, token, protected)
         resources.extend(iam_resources)
+        skipped_details.extend(iam_details)
         reasons = ", ".join(f"{key}={value}" for key, value in iam_skipped.items() if value)
         if reasons:
             warnings.append(f"project_iam: skipped bindings ({reasons})")
@@ -523,12 +534,15 @@ def discover(stack: GcpStack, sections: tuple[str, ...]) -> PrunePlan:
         resources.extend(_api_plan(stack, token))
     if not resources:
         warnings.append("no undeclared resources found in the selected sections")
-    return PrunePlan(resources=tuple(resources), warnings=tuple(warnings))
+    return PrunePlan(
+        resources=tuple(resources),
+        warnings=tuple(warnings),
+        skipped=tuple(skipped_details),
+    )
 
 
 __all__ = [
     "PROTECTED_APIS",
-    "PROTECTED_IAM_ROLES",
     "PRUNE_SECTIONS",
     "discover",
     "get_project_iam_bindings",

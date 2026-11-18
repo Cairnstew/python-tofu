@@ -216,6 +216,7 @@ python-tofu apply --config infra.py --prune --auto-approve  # apply, then prune
 | `--allow-service-accounts` | Second gate for service accounts; also requires `include_service_accounts=True` |
 | `--apply` | Actually delete; without it the command only lists |
 | `--auto-approve` | Skip the deletion confirmation |
+| `--explain` | List every skipped IAM binding with its reason |
 
 `plan --prune` only previews. `apply --prune` prunes after a successful apply
 and always skips `project_iam` (IAM is eventually consistent); use the

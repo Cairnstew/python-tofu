@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `google_service_account_iam_member` binding for delegation —
   `roles/iam.serviceAccountTokenCreator` (impersonation) or
   `roles/iam.serviceAccountUser` (actAs) on one specific account.
+- `PruneConfig.protected_iam_roles` (default `("roles/owner",)`, owner always
+  included): roles prune must never remove. `roles/editor` is not protected by
+  default. `prune --explain` lists every skipped IAM binding with its reason.
 - `PruneConfig.protected_service_accounts` and automatic protection of the
   active credential's service-account identity (the key's `client_email` plus
   any `impersonate_service_account` target). The guard applies regardless of
