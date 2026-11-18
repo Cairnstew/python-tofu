@@ -82,6 +82,15 @@ opened with `GITHUB_TOKEN`, whose pushes do not trigger workflows, so that PR
 reports no `ci-success` and needs an admin bypass merge (or a PAT/App token in
 that workflow).
 
+The matching repository settings are `allow_merge_commit=false`,
+`allow_squash_merge=true`, `allow_rebase_merge=true` and
+`delete_branch_on_merge=true`, so the UI never offers a merge method the ruleset
+would reject.
+
+Tag ruleset `release tags` blocks deleting or force-moving `v*` tags, which is
+what `release.yml` publishes from. It carries the same admin bypass. Commits are
+not signed, so no `required_signatures` rule is set.
+
 ### `release.yml` (tag push `v*`, or manual dispatch)
 
 1. Detect whether the project exposes `[project.scripts]`
