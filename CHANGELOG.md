@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scripts/live-module-vm.sh` (`just test-live-module`): a live end-to-end test
+  of the NixOS module. It builds the system in `nix/live-vm.nix`, boots it under
+  QEMU and lets the real `python-tofu.service` `apply` the stack in
+  `nix/live-vm-stack.nix` at activation, then verifies the bucket, service
+  account and IAM binding through the GCP APIs. `just clean-live-module`
+  destroys them. Not a flake check: it needs `/dev/kvm`, network and a
+  credential, and changes cloud state.
 - `ServiceAccountIamMember` (and its `StackPart`/Nix section): a
   `google_service_account_iam_member` binding for delegation —
   `roles/iam.serviceAccountTokenCreator` (impersonation) or

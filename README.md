@@ -335,13 +335,16 @@ just pre-commit    # run every hook over the tree
 just nix-check     # evaluate all flake checks (fast)
 just nix-check-build  # build every flake check (same as CI's nix job)
 just nix-build     # build the application
+just test-live-module  # boot a VM and apply the live module stack to GCP
 nix fmt            # format .nix files (nixpkgs-fmt)
 ```
 
 `nix flake check` is the single gate: it builds `lint`, `typecheck`,
 `unit-tests`, `integration-tests`, `format`, the example render checks, the
 hermetic `validate-examples` checks, the NixOS/Home Manager module evaluations
-and the module VM test. The shell installs the pre-commit hook on
+and the module VM test. `just test-live-module` is the opt-in live counterpart:
+it boots a real NixOS system and applies the module's stack to the throwaway
+GCP project. The shell installs the pre-commit hook on
 first entry; `pre-commit run --all-files` runs the same ruff, mypy and
 `nixpkgs-fmt` hooks over a dirty tree.
 
