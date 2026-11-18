@@ -48,6 +48,7 @@ class PrunePlan:
 
     resources: tuple[PrunableResource, ...] = ()
     warnings: tuple[str, ...] = ()
+    skipped: tuple[str, ...] = ()
 
     @property
     def empty(self) -> bool:

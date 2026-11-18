@@ -115,6 +115,23 @@ def test_empty_sections_are_rendered_as_empty_lists() -> None:
 
 
 @pytest.mark.nix
+def test_prune_protected_iam_roles_are_exposed() -> None:
+    stack = _eval("""
+      {
+        provider.project = "demo-project";
+        prune = {
+          enabled = true;
+          sections = [ "project_iam" ];
+          protected_service_accounts = [ "org-admin" ];
+          protected_iam_roles = [ "roles/editor" "roles/owner" ];
+        };
+      }
+    """)
+    assert stack["prune"]["protected_service_accounts"] == ["org-admin"]
+    assert stack["prune"]["protected_iam_roles"] == ["roles/editor", "roles/owner"]
+
+
+@pytest.mark.nix
 def test_modules_compose_with_mkmerge() -> None:
     stack = _eval("""
       {

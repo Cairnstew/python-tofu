@@ -133,6 +133,15 @@ def test_project_iam_is_explicit_only() -> None:
     assert GCP.prune_explicit_only == ("project_iam",)
 
 
+def test_roles_owner_is_always_a_protected_iam_role() -> None:
+    assert PruneConfig().protected_iam_roles == ("roles/owner",)
+    assert PruneConfig(protected_iam_roles=()).protected_iam_roles == ("roles/owner",)
+    assert PruneConfig(protected_iam_roles=("roles/editor",)).protected_iam_roles == (
+        "roles/owner",
+        "roles/editor",
+    )
+
+
 def test_prune_sections_resolve_in_provider_order() -> None:
     config = PruneConfig(enabled=True, sections=("apis", "buckets"))
     assert config.resolve(GCP_PRUNE_SECTIONS) == ("buckets", "apis")
@@ -371,6 +380,60 @@ def test_project_iam_skips_conditional_and_owner_bindings(
     assert plan.resources == ()
     assert any("conditional=" in warning for warning in plan.warnings)
     assert any("protected-role=" in warning for warning in plan.warnings)
+
+
+def test_roles_editor_is_not_protected_by_default(
+    inventory: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        gcp_prune,
+        "get_project_iam_bindings",
+        lambda project, token: [
+            {
+                "role": "roles/editor",
+                "members": ["serviceAccount:ci-runner@demo-project.iam.gserviceaccount.com"],
+            }
+        ],
+    )
+
+    assert len(discover(_iam_stack(), ("project_iam",)).resources) == 1
+
+
+def test_configurable_protected_iam_roles(inventory: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        gcp_prune,
+        "get_project_iam_bindings",
+        lambda project, token: [
+            {
+                "role": "roles/editor",
+                "members": ["serviceAccount:ci-runner@demo-project.iam.gserviceaccount.com"],
+            }
+        ],
+    )
+    stack = _iam_stack(prune=PruneConfig(enabled=True, protected_iam_roles=("roles/editor",)))
+
+    plan = discover(stack, ("project_iam",))
+
+    assert plan.resources == ()
+    assert any("protected-role=1" in warning for warning in plan.warnings)
+
+
+def test_explain_style_details_cover_each_skip_reason(
+    inventory: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gcp_prune, "get_project_iam_bindings", lambda project, token: IAM_POLICY)
+
+    plan = discover(_iam_stack(), ("project_iam",))
+
+    assert any(
+        "user:alice@example.com roles/viewer (non-service-account)" in item for item in plan.skipped
+    )
+    assert any("roles/owner (protected-role)" in item for item in plan.skipped)
+    assert any("roles/editor (conditional)" in item for item in plan.skipped)
+    assert any(
+        "manual@demo-project.iam.gserviceaccount.com roles/viewer (not-declared)" in item
+        for item in plan.skipped
+    )
 
 
 def test_get_project_iam_bindings_requests_policy_version_three(
@@ -636,6 +699,27 @@ def test_cli_apply_with_prune_prunes_after_apply(
 
     assert result.exit_code == 0, _combined(result)
     assert "Pruned 2 resource(s)." in result.output
+
+
+def test_cli_prune_explain_lists_skipped_bindings(
+    runner: CliRunner,
+    cli: object,
+    tmp_path: Path,
+    inventory: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _write_config(tmp_path, enabled=True, sections=("project_iam",))
+    monkeypatch.setattr(gcp_prune, "get_project_iam_bindings", lambda project, token: IAM_POLICY)
+
+    result = runner.invoke(
+        cli,
+        ["prune", "--config", str(config), "--workdir", str(tmp_path / "tofu"), "--explain"],
+    )
+
+    assert result.exit_code == 0, _combined(result)
+    assert "Skipped IAM bindings:" in result.output
+    assert "user:alice@example.com roles/viewer (non-service-account)" in result.output
+    assert "roles/owner (protected-role)" in result.output
 
 
 def test_cli_prune_service_accounts_needs_both_gates(

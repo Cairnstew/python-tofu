@@ -119,7 +119,11 @@ in
       description = "Stack-level limit enforcement.";
     };
 
-    prune = section "Prune config (`enabled`, `sections`, `include_service_accounts`).";
+    prune = section ''
+      Prune config (`enabled`, `sections`, `include_service_accounts`,
+      `protected_service_accounts`, `protected_iam_roles`, `allow_raw_hcl`).
+      `roles/owner` is always protected.
+    '';
 
     extra_files = mkOption {
       type = types.attrsOf types.str;

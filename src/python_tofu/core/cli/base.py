@@ -177,6 +177,7 @@ class BaseCommand:
         *,
         dry_run: bool,
         auto_approve: bool = False,
+        explain: bool = False,
     ) -> None:
         """Discover and (unless ``dry_run``) delete undeclared live resources."""
 
@@ -189,6 +190,10 @@ class BaseCommand:
 
         for warning in plan.warnings:
             typer.secho(f"Note: {warning}", fg=typer.colors.YELLOW, err=True)
+        if explain and plan.skipped:
+            typer.echo("Skipped IAM bindings:")
+            for detail in plan.skipped:
+                typer.echo(f"    - {detail}")
         if plan.empty:
             return
 
