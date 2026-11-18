@@ -199,11 +199,13 @@ class ServiceCatalog:
         credentials: str | None = None,
         token: str | None = None,
         quota_project: str | None = None,
+        impersonate_service_account: str | None = None,
     ) -> None:
         self.project = project
         self._credentials = credentials
         self._token = token
         self._quota_project = quota_project
+        self._impersonate_service_account = impersonate_service_account
         self._enabled: tuple[Service, ...] | None = None
         self._available: tuple[Service, ...] | None = None
         self._all: tuple[Service, ...] | None = None
@@ -215,7 +217,10 @@ class ServiceCatalog:
     @property
     def token(self) -> str:
         if self._token is None:
-            self._token = access_token_for(self._credentials)
+            self._token = access_token_for(
+                self._credentials,
+                impersonate_service_account=self._impersonate_service_account,
+            )
         return self._token
 
     def _fetch(self, state: str | None) -> tuple[Service, ...]:
@@ -320,12 +325,16 @@ def enable_apis(
     *names: str,
     credentials: str | None = None,
     quota_project: str | None = None,
+    impersonate_service_account: str | None = None,
 ) -> list[ProjectApi]:
     """One-shot convenience wrapper around :meth:`ServiceCatalog.enable`."""
 
-    return ServiceCatalog(project, credentials=credentials, quota_project=quota_project).enable(
-        *names
-    )
+    return ServiceCatalog(
+        project,
+        credentials=credentials,
+        quota_project=quota_project,
+        impersonate_service_account=impersonate_service_account,
+    ).enable(*names)
 
 
 __all__ = [

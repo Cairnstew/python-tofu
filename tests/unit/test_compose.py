@@ -7,6 +7,7 @@ from python_tofu.providers.gcp import (
     GcpProvider,
     GcpStack,
     ProjectApi,
+    ProjectIamMember,
     ServiceAccount,
     StackPart,
     StorageBucket,
@@ -93,6 +94,34 @@ def test_compose_with_no_parts_returns_no_arguments() -> None:
 def test_part_name_must_not_be_blank() -> None:
     with pytest.raises(ValueError, match="non-empty name"):
         StackPart(name="  ")
+
+
+def test_compose_distinguishes_service_account_bindings() -> None:
+    parts = [
+        StackPart(
+            name="one",
+            iam_members=[
+                ProjectIamMember(
+                    project=PROJECT,
+                    role="roles/viewer",
+                    service_account="one@demo-project.iam.gserviceaccount.com",
+                )
+            ],
+        ),
+        StackPart(
+            name="two",
+            iam_members=[
+                ProjectIamMember(
+                    project=PROJECT,
+                    role="roles/viewer",
+                    service_account="two@demo-project.iam.gserviceaccount.com",
+                )
+            ],
+        ),
+    ]
+
+    stack = GcpStack(provider=GcpProvider(project=PROJECT), **compose(*parts))
+    assert len(stack.iam_members) == 2
 
 
 def test_every_part_section_exists_on_the_stack() -> None:

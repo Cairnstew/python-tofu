@@ -26,6 +26,7 @@ from python_tofu.providers.gcp.models import (
     PubSubSubscription,
     PubSubTopic,
     ServiceAccount,
+    ServiceAccountIamMember,
     StorageBucket,
 )
 
@@ -46,6 +47,7 @@ class StackPart:
     buckets: Sequence[StorageBucket] = ()
     bucket_objects: Sequence[BucketObject] = ()
     iam_members: Sequence[ProjectIamMember] = ()
+    service_account_iam_members: Sequence[ServiceAccountIamMember] = ()
     cloud_run_services: Sequence[CloudRunService] = ()
     cloud_run_functions: Sequence[CloudRunFunction] = ()
     cloud_run_jobs: Sequence[CloudRunJob] = ()
@@ -72,7 +74,10 @@ _ADDRESS: dict[str, Callable[[Any], str]] = {
     "buckets": lambda item: f"bucket {item.name!r}",
     "bucket_objects": lambda item: f"object {item.name!r} in bucket {item.bucket!r}",
     "iam_members": lambda item: (
-        f"IAM binding {item.role!r} for {item.member!r} in {item.project!r}"
+        f"IAM binding {item.role!r} for {item.member or item.service_account!r} in {item.project!r}"
+    ),
+    "service_account_iam_members": lambda item: (
+        f"service-account IAM binding {item.role!r} for {item.member!r} on {item.service_account!r}"
     ),
     "cloud_run_services": lambda item: f"Cloud Run service {item.name!r} in {item.project!r}",
     "cloud_run_functions": lambda item: f"Cloud Run function {item.name!r} in {item.project!r}",

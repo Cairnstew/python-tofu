@@ -155,6 +155,38 @@ fails with a 403 even though the resource is declared. Raw resources added with
 `extra_files` never derive APIs — add `depends_on` by hand (see the BigLake
 example).
 
+## IAM and identities
+
+### Provider credentials are fixed before resources exist
+OpenTofu configures `provider "google"` before it creates anything, and the
+renderer emits one static provider block. A service account (or key) created
+during an `apply` cannot be the identity for other resources in that same
+`apply`. Split it: phase 1 creates projects/accounts/delegation grants as the
+provisioning identity; phase 2 runs as the new project identity through
+`impersonate_service_account`. See `examples/org_projects/`.
+
+### Service-account local names omit the project
+The HCL labels are `sa_<account_id>` and `iam_<role>_<member>`, so two projects
+in one stack cannot both declare an account called `runtime` (or grant the same
+role to the same principal in two projects): the renderer raises
+`duplicate resource address`. One project per stack, or project-qualified
+`account_id` values. Do not add the project to the default label: that rewrites
+existing state addresses.
+
+### Impersonation applies to read-only calls too
+`GcpProvider.impersonate_service_account` is used by the provider block and by
+the wrapper's `doctor`, `limits --usage live`, `prune` and `ServiceCatalog`
+calls (`live.access_token_for`). The source identity therefore needs
+`roles/iam.serviceAccountTokenCreator` **on the target account** before phase 2
+runs — grant it with `ServiceAccountIamMember`, not a project-level role.
+
+### Keys created by tofu live in state
+There is no key model on purpose. If you add `google_service_account_key` via
+`extra_files`, its `private_key` is stored in OpenTofu state (cleartext unless
+state encryption or a restricted GCS backend is in place). Prefer
+impersonation; encrypt any key you do materialise into the gitignored
+`.cache/gcp-keys/`.
+
 ## Pruning
 
 ### Pruning is opt-in and irreversible
@@ -388,8 +420,12 @@ plan output.
 ### agenix GCP credentials
 `/run/agenix/gcloud-auth` is the agenix-managed service-account JSON (owner
 `seanc:0400`). It was rotated on 2026-11-17 to
-`nixos-infra-admin@nixos-infra-496517.iam.gserviceaccount.com`, which holds
-`roles/owner` and `roles/admin` on project `nixos-infra-496517`. `.envrc` exports
+`org-admin@nixos-infra-496517.iam.gserviceaccount.com`, the org-level seed admin
+created by `scripts/bootstrap-org-admin.sh`. It holds `projectCreator`,
+`folderAdmin`, `securityAdmin`, `serviceAccountAdmin`, `serviceAccountKeyAdmin`
+and `orgpolicy.policyAdmin` on organization `595961694991` (project
+`nixos-infra-496517`), plus `billing.user` on the billing account. The earlier
+`nixos-infra-admin@...` key was the project-scoped rotation. `.envrc` exports
 `GOOGLE_APPLICATION_CREDENTIALS`, `TF_VAR_gcp_credentials_file`,
 `GOOGLE_PROJECT`, `GOOGLE_CLOUD_PROJECT`, `CLOUDSDK_CORE_PROJECT` and
 `TF_VAR_project` when the file is readable. Run `direnv allow` after editing

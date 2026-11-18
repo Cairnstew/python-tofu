@@ -104,8 +104,8 @@ identity field when it is not set explicitly:
 | `artifact_registry_repositories` | `repository_id` |
 | `outputs` | `name` |
 
-`apis` and `iam_members` have no single identity field, so their declarations
-supply every model field.
+`apis`, `iam_members` and `service_account_iam_members` have no single identity
+field, so their declarations supply every model field.
 
 All sections merge with the Nix module system, so a declaration can be split
 across files with `imports`, `mkMerge` and `mkIf`:

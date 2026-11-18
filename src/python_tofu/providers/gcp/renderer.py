@@ -33,6 +33,7 @@ from python_tofu.providers.gcp.models import (
     PubSubTopic,
     SecretEnv,
     ServiceAccount,
+    ServiceAccountIamMember,
     StorageBucket,
     Volume,
 )
@@ -215,17 +216,93 @@ def _bucket_block(bucket: StorageBucket) -> Block:
     )
 
 
-def _iam_member_block(binding: ProjectIamMember) -> Block:
+def _iam_member_block(binding: ProjectIamMember, stack: "GcpStack") -> Block:
+    member = (
+        _principal_value(stack, binding.service_account)
+        if binding.service_account
+        else binding.member
+    )
+    principal = binding.member or binding.service_account or "principal"
     return Block(
         "resource",
         (
             "google_project_iam_member",
-            f"iam_{slug(binding.role)}_{slug(binding.member)}",
+            f"iam_{slug(binding.role)}_{slug(principal)}",
         ),
         body(
             Attr("project", binding.project),
             Attr("role", binding.role),
-            Attr("member", binding.member),
+            Attr("member", member),
+        ),
+    )
+
+
+def _principal_value(stack: "GcpStack", value: str) -> str | Raw:
+    """Resolve a declared account id/email to a ``serviceAccount:`` principal.
+
+    A value that already carries a prefix (``user:``, ``group:``, ...) or is an
+    HCL reference is returned untouched. A bare email becomes
+    ``serviceAccount:<email>``; a declared account id/email becomes an
+    interpolation so the binding depends on the account resource.
+    """
+
+    if is_reference_template(value) or ":" in value:
+        return value
+    for account in stack.service_accounts:
+        email = f"{account.account_id}@{account.project}.iam.gserviceaccount.com"
+        if value in (account.account_id, email):
+            local = f"sa_{slug(account.account_id)}"
+            return Raw(f'"serviceAccount:${{google_service_account.{local}.email}}"')
+    if "@" in value:
+        return f"serviceAccount:{value}"
+    return value
+
+
+def _service_account_project(stack: "GcpStack", value: str) -> str:
+    """Project that owns the target service account, for API ordering."""
+
+    if is_reference_template(value):
+        return stack.provider.project
+    if value.startswith("projects/"):
+        parts = value.split("/")
+        if len(parts) > 1 and parts[1] not in ("-", ""):
+            return parts[1]
+    for account in stack.service_accounts:
+        email = f"{account.account_id}@{account.project}.iam.gserviceaccount.com"
+        if value in (account.account_id, email):
+            return account.project
+    _, _, domain = value.partition("@")
+    suffix = ".iam.gserviceaccount.com"
+    if domain.endswith(suffix):
+        return domain.removesuffix(suffix)
+    return stack.provider.project
+
+
+def _service_account_local(stack: "GcpStack", value: str) -> str:
+    """Stable label fragment for a target account: its declared local name or slug."""
+
+    for account in stack.service_accounts:
+        email = f"{account.account_id}@{account.project}.iam.gserviceaccount.com"
+        if value in (account.account_id, email):
+            return f"sa_{slug(account.account_id)}"
+    return slug(value)
+
+
+def _service_account_iam_member_block(binding: ServiceAccountIamMember, stack: "GcpStack") -> Block:
+    return Block(
+        "resource",
+        (
+            "google_service_account_iam_member",
+            f"iam_{_service_account_local(stack, binding.service_account)}_"
+            f"{slug(binding.role)}_{slug(binding.member)}",
+        ),
+        body(
+            Attr(
+                "service_account_id",
+                _service_account_name_ref(stack, binding.service_account),
+            ),
+            Attr("role", binding.role),
+            Attr("member", _principal_value(stack, binding.member)),
         ),
     )
 
@@ -622,7 +699,7 @@ def _dead_letter_iam_block(subscription: PubSubSubscription, stack: "GcpStack") 
 def _service_account_name_ref(stack: "GcpStack", value: str) -> str | Raw:
     """Full ``projects/.../serviceAccounts/...`` name for an IAM member target."""
 
-    if is_reference_template(value):
+    if is_reference_template(value) or value.startswith("projects/"):
         return value
     for account in stack.service_accounts:
         email = f"{account.account_id}@{account.project}.iam.gserviceaccount.com"
@@ -1020,6 +1097,27 @@ class GcpRenderer(BaseRenderer[GcpStack]):
                 )
                 blocks.append(_with_api_deps(role_block, stack, account.project, account))
 
+        for sa_binding in stack.service_account_iam_members:
+            address = (
+                "google_service_account_iam_member."
+                f"iam_{_service_account_local(stack, sa_binding.service_account)}_"
+                f"{slug(sa_binding.role)}_{slug(sa_binding.member)}"
+            )
+            require_unique(
+                seen,
+                address,
+                "service-account IAM binding "
+                f"{sa_binding.role!r} on {sa_binding.service_account!r}",
+            )
+            blocks.append(
+                _with_api_deps(
+                    _service_account_iam_member_block(sa_binding, stack),
+                    stack,
+                    _service_account_project(stack, sa_binding.service_account),
+                    sa_binding,
+                )
+            )
+
         for bucket in stack.buckets:
             address = f"google_storage_bucket.bucket_{slug(bucket.name)}"
             require_unique(seen, address, f"bucket {bucket.name!r}")
@@ -1038,10 +1136,15 @@ class GcpRenderer(BaseRenderer[GcpStack]):
             )
 
         for binding in stack.iam_members:
-            address = f"google_project_iam_member.iam_{slug(binding.role)}_{slug(binding.member)}"
-            require_unique(seen, address, f"IAM binding {binding.role!r} for {binding.member!r}")
+            principal = binding.member or binding.service_account or "principal"
+            address = f"google_project_iam_member.iam_{slug(binding.role)}_{slug(principal)}"
+            require_unique(
+                seen,
+                address,
+                f"IAM binding {binding.role!r} for {principal!r}",
+            )
             blocks.append(
-                _with_api_deps(_iam_member_block(binding), stack, binding.project, binding)
+                _with_api_deps(_iam_member_block(binding, stack), stack, binding.project, binding)
             )
 
         for repository in stack.artifact_registry_repositories:

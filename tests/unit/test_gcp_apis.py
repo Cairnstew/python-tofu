@@ -20,6 +20,7 @@ from python_tofu.providers.gcp import (
     SecretEnv,
     SecretVolume,
     ServiceAccount,
+    ServiceAccountIamMember,
     StorageBucket,
     Volume,
 )
@@ -205,6 +206,24 @@ def test_service_account_roles_need_resource_manager() -> None:
     )
 
     assert CLOUD_RESOURCE_MANAGER in required_apis(stack)[PROJECT]
+
+
+def test_service_account_iam_binding_needs_only_iam() -> None:
+    stack = _stack(
+        provider=GcpProvider(project=PROJECT, default_apis=()),
+        service_accounts=[ServiceAccount(project=PROJECT, account_id="pusher")],
+        service_account_iam_members=[
+            ServiceAccountIamMember(
+                service_account="pusher",
+                role="roles/iam.serviceAccountTokenCreator",
+                member="user:alice@example.com",
+            )
+        ],
+    )
+
+    services = required_apis(stack)[PROJECT]
+    assert IAM in services
+    assert CLOUD_RESOURCE_MANAGER not in services
 
 
 def test_functions_pull_in_build_and_eventarc() -> None:

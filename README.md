@@ -34,6 +34,10 @@ On a machine with this repo's agenix secrets, `.envrc` exports the
 Run `direnv allow` once after changing `.envrc`. Without the secret, the shell
 still works and the standard ADC mechanisms apply.
 
+For a brand-new organization, `scripts/bootstrap-org-admin.sh` creates the seed
+org-admin service account with a temporary `gcloud auth login`; see the
+[quickstart](docs/guides/quickstart.md#bootstrap-an-organization-admin-account).
+
 ## Quick start
 
 The default dev shell provides Python 3.12, `uv`, the locked `python-tofu`
@@ -353,4 +357,5 @@ first entry; `pre-commit run --all-files` runs the same ruff, mypy and
 - [CI reference](docs/reference/ci.md)
 - [NixOS integration](docs/guides/nixos-integration.md)
 - [GCP bootstrap example](examples/gcp_bootstrap/README.md)
+- [Per-project identities without keys](examples/org_projects/README.md)
 - [Free-tier test infrastructure](examples/gcp_test_infra/README.md)

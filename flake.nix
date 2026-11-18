@@ -437,6 +437,23 @@
             tofu fmt -check -recursive "$out"
           '';
 
+          # Two-phase org example: phase 1 creates the identities and the
+          # delegation grants; phase 2 impersonates the project provisioner.
+          render-org-example = pkgs.runCommand "render-org-example"
+            {
+              nativeBuildInputs = [ self.packages.${system}.default pkgs.opentofu ];
+            } ''
+            python-tofu render \
+              --config ${./examples/org_projects}/platform.py \
+              --workdir "$out/platform" > /dev/null
+            python-tofu render \
+              --config ${./examples/org_projects}/acme_data.py \
+              --workdir "$out/acme-data" > /dev/null
+            grep -q 'google_service_account_iam_member' "$out/platform/main.tf"
+            grep -q 'impersonate_service_account' "$out/acme-data/providers.tf"
+            tofu fmt -check -recursive "$out"
+          '';
+
           # The Nix option tree is the authoring surface. Evaluate it at check
           # time and assert the keyed sections land in the JSON schema.
           stack-eval =
@@ -445,12 +462,42 @@
               project = builtins.head stack.projects;
               bucket = builtins.head stack.buckets;
               account = builtins.head stack.service_accounts;
+              delegation = builtins.head stack.service_account_iam_members;
             in
             if project.project_id == "example-bootstrap"
               && bucket.name == "example-bootstrap-artifacts"
               && account.account_id == "ci-runner"
+              && delegation.role == "roles/iam.serviceAccountTokenCreator"
             then pkgs.writeText "stack-eval" (builtins.toJSON stack)
             else throw "stack-eval: keyed sections did not fill the identity fields";
+
+          # The two live prune-test stacks are Nix-authored and carry the
+          # agenix credential path; render both and keep them fmt-clean.
+          render-prune-test =
+            let
+              platform = mkStackJson {
+                modules = [ ./examples/org_projects/test-platform.nix ];
+              };
+              project = mkStackJson {
+                modules = [ ./examples/org_projects/test-project.nix ];
+              };
+            in
+            pkgs.runCommand "render-prune-test"
+              {
+                nativeBuildInputs = [ self.packages.${system}.default pkgs.opentofu ];
+              } ''
+              mkdir -p "$TMPDIR/platform" "$TMPDIR/project"
+              printf '%s' ${lib.escapeShellArg platform} > "$TMPDIR/platform/stack.json"
+              printf '%s' ${lib.escapeShellArg project} > "$TMPDIR/project/stack.json"
+              python-tofu render \
+                --config "$TMPDIR/platform/stack.json" --workdir "$TMPDIR/platform/out" > /dev/null
+              python-tofu render \
+                --config "$TMPDIR/project/stack.json" --workdir "$TMPDIR/project/out" > /dev/null
+              grep -q 'credentials = "/run/agenix/gcloud-auth"' "$TMPDIR/platform/out/providers.tf"
+              grep -q 'credentials = "/run/agenix/gcloud-auth"' "$TMPDIR/project/out/providers.tf"
+              tofu fmt -check -recursive "$TMPDIR/platform/out" "$TMPDIR/project/out"
+              touch "$out"
+            '';
 
           # The strong cross-language check: a Nix-authored stack must render
           # byte-for-byte like the Python example it mirrors. Any schema drift
@@ -546,6 +593,8 @@
             check bootstrap ${./examples/gcp_bootstrap}/infra.py
             check clean ${./examples/gcp_clean}/stack.py
             check test-infra ${./examples/gcp_test_infra}/stack.py
+            check org-platform ${./examples/org_projects}/platform.py
+            check org-acme ${./examples/org_projects}/acme_data.py
             # The Nix-authored stack is validated by the same provider schema.
             check nix ${pkgs.writeText "nix-stack.json" (mkStackJson {
               modules = [ ./examples/gcp_nix/module.nix ];

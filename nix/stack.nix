@@ -159,6 +159,7 @@ in
     buckets = section "`google_storage_bucket` resources, keyed by bucket name.";
     bucket_objects = section "`google_storage_bucket_object` resources, keyed by object name.";
     iam_members = section "`google_project_iam_member` resources, keyed by a local name.";
+    service_account_iam_members = section "`google_service_account_iam_member` resources, keyed by a local name.";
     cloud_run_services = section "`google_cloud_run_v2_service` resources, keyed by service name.";
     cloud_run_functions = section "Cloud Run function resources, keyed by function name.";
     cloud_run_jobs = section "Cloud Run job resources, keyed by job name.";
@@ -195,6 +196,7 @@ in
     buckets = withIdentity "name" config.buckets;
     bucket_objects = withIdentity "name" config.bucket_objects;
     iam_members = plain config.iam_members;
+    service_account_iam_members = plain config.service_account_iam_members;
     cloud_run_services = withIdentity "name" config.cloud_run_services;
     cloud_run_functions = withIdentity "name" config.cloud_run_functions;
     cloud_run_jobs = withIdentity "name" config.cloud_run_jobs;

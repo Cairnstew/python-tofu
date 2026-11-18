@@ -13,7 +13,9 @@ from python_tofu.providers.gcp.live import (
     _is_free_tier_cluster,
     _is_free_tier_disk,
     _is_free_tier_e2_micro,
+    _normalise_impersonation,
     _region,
+    access_token,
     live_measure_usage,
 )
 
@@ -147,6 +149,48 @@ def test_list_assets_paginates_and_skips_missing_resource_data(
     assert calls[0]["assetTypes"] == live.INSTANCE_TYPE
     assert calls[0]["contentType"] == "RESOURCE"
     assert calls[1]["pageToken"] == "n"
+
+
+def test_access_token_forwards_impersonation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake_token(
+        credentials: str | None = None,
+        impersonate_service_account: str | None = None,
+    ) -> str:
+        seen["credentials"] = credentials
+        seen["impersonate"] = impersonate_service_account
+        return "token"
+
+    monkeypatch.setattr(live, "access_token_for", fake_token)
+    target = "provisioner@demo-project.iam.gserviceaccount.com"
+    value = access_token(
+        GcpStack(
+            provider=GcpProvider(
+                project="demo-project",
+                impersonate_service_account=target,
+            )
+        )
+    )
+    assert value == "token"
+    assert seen["impersonate"] == target
+
+
+def test_normalise_impersonation() -> None:
+    assert _normalise_impersonation(None) is None
+    assert _normalise_impersonation("") is None
+    assert (
+        _normalise_impersonation("sa@demo-project.iam.gserviceaccount.com")
+        == "sa@demo-project.iam.gserviceaccount.com"
+    )
+    assert (
+        _normalise_impersonation("serviceAccount:sa@demo-project.iam.gserviceaccount.com")
+        == "sa@demo-project.iam.gserviceaccount.com"
+    )
+    with pytest.raises(LiveUsageError, match="must be a service-account email"):
+        _normalise_impersonation("not-an-email")
 
 
 def test_provider_live_usage_overrides_stack_estimates(

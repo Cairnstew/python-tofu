@@ -10,6 +10,8 @@ from python_tofu.models import (
     GcpProvider,
     GcpStack,
     ProjectIamMember,
+    ServiceAccount,
+    ServiceAccountIamMember,
     StorageBucket,
 )
 from python_tofu.services.renderer import Renderer
@@ -100,6 +102,73 @@ def test_object_accepts_a_bucket_interpolation() -> None:
     main = Renderer(".tofu").render_text(stack)["main.tf"]
     assert '"${google_storage_bucket.bucket_other.name}"' in main
     assert "google_storage_bucket.bucket_demo_project_artifacts.name" not in main
+
+
+def test_iam_member_accepts_a_declared_service_account() -> None:
+    stack = GcpStack(
+        provider=GcpProvider(project="demo-project"),
+        service_accounts=[ServiceAccount(project="demo-project", account_id="ci-runner")],
+        iam_members=[
+            ProjectIamMember(
+                project="demo-project",
+                role="roles/storage.admin",
+                service_account="ci-runner",
+            )
+        ],
+    )
+    main = Renderer(".tofu").render_text(stack)["main.tf"]
+    assert 'member     = "serviceAccount:${google_service_account.sa_ci_runner.email}"' in main
+
+
+def test_iam_member_requires_exactly_one_principal() -> None:
+    for kwargs in (
+        {},
+        {
+            "member": "user:alice@example.com",
+            "service_account": "ci-runner",
+        },
+    ):
+        with pytest.raises(ValidationError, match="exactly one of member or service_account"):
+            ProjectIamMember(project="demo-project", role="roles/viewer", **kwargs)
+
+
+def test_service_account_iam_member_renders_delegation() -> None:
+    stack = GcpStack(
+        provider=GcpProvider(project="demo-project"),
+        service_accounts=[ServiceAccount(project="demo-project", account_id="ci-runner")],
+        service_account_iam_members=[
+            ServiceAccountIamMember(
+                service_account="ci-runner",
+                role="roles/iam.serviceAccountTokenCreator",
+                member="user:alice@example.com",
+            ),
+            ServiceAccountIamMember(
+                service_account="ci-runner@demo-project.iam.gserviceaccount.com",
+                role="roles/iam.serviceAccountUser",
+                member="ci-runner",
+            ),
+        ],
+    )
+    main = Renderer(".tofu").render_text(stack)["main.tf"]
+    assert "service_account_id = google_service_account.sa_ci_runner.name" in main
+    assert 'role               = "roles/iam.serviceAccountTokenCreator"' in main
+    assert 'member             = "user:alice@example.com"' in main
+    delegated = 'member             = "serviceAccount:${google_service_account.sa_ci_runner.email}"'
+    assert delegated in main
+
+
+def test_unknown_service_account_reference_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="unknown service accounts"):
+        GcpStack(
+            provider=GcpProvider(project="demo-project"),
+            service_account_iam_members=[
+                ServiceAccountIamMember(
+                    service_account="missing-account",
+                    role="roles/iam.serviceAccountUser",
+                    member="user:alice@example.com",
+                )
+            ],
+        )
 
 
 def test_duplicate_objects_are_rejected() -> None:

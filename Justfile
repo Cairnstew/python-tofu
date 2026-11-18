@@ -61,6 +61,10 @@ nix-build:
 nix-shell:
     nix develop
 
+# create the org-level seed admin service account (one-time, needs org admin)
+bootstrap-admin *ARGS:
+    ./scripts/bootstrap-org-admin.sh {{ARGS}}
+
 # pip-audit plus bandit
 audit:
     pip-audit

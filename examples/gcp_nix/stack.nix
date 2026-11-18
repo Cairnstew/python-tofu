@@ -62,6 +62,14 @@
       }
     ];
 
+    service_account_iam_members = [
+      {
+        service_account = "ci-runner";
+        role = "roles/iam.serviceAccountTokenCreator";
+        member = "user:alice@example.com";
+      }
+    ];
+
     buckets = [
       {
         project = "example-bootstrap";

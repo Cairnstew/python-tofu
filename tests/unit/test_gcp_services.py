@@ -84,7 +84,11 @@ def api(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str | None]]:
 
     monkeypatch.setattr(gcp_services, "list_services", fake_list)
     monkeypatch.setattr(gcp_services, "get_service", fake_get)
-    monkeypatch.setattr(gcp_services, "access_token_for", lambda credentials=None: "token")
+    monkeypatch.setattr(
+        gcp_services,
+        "access_token_for",
+        lambda credentials=None, impersonate_service_account=None: "token",
+    )
     return calls
 
 

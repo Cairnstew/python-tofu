@@ -54,6 +54,12 @@
     ];
   };
 
+  service_account_iam_members.ci-token-creator = {
+    service_account = "ci-runner";
+    role = "roles/iam.serviceAccountTokenCreator";
+    member = "user:alice@example.com";
+  };
+
   buckets.example-bootstrap-artifacts = {
     project = "example-bootstrap";
     location = "EU";
