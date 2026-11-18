@@ -73,3 +73,39 @@ jobs:
     if: needs.changes.outputs.python == 'true'
     uses: ./.github/workflows/audit.yml
     secrets: inherit
+
+  # Aggregate gate: the one check the `main` ruleset requires.
+  #
+  # Every job above is path-filtered, so on a change that does not touch their
+  # filter they are skipped — and a required check that never reports sits at
+  # "Expected" and blocks the merge forever. This job always runs and turns
+  # "every applicable job passed" into a single, stable status context.
+  # `skipped` counts as a pass because it is the intentional path-filter result;
+  # `failure`, `cancelled` and anything else fail the gate.
+  ci-success:
+    needs:
+      - changes
+      - lint
+      - typecheck
+      - test-unit
+      - test-integration
+      - nix
+      - audit
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check every job passed or was skipped
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          bad=$(jq -r '
+            to_entries[]
+            | select(.value.result != "success" and .value.result != "skipped")
+            | "\(.key): \(.value.result)"
+          ' <<<"$RESULTS")
+          if [ -n "$bad" ]; then
+            echo "Required job(s) did not pass:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "All jobs passed or were skipped."
