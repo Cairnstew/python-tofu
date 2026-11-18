@@ -75,6 +75,7 @@ ORG_ROLES=(
   roles/iam.securityAdmin               # set IAM policy on org/folders/projects
   roles/iam.serviceAccountAdmin         # create per-project service accounts
   roles/iam.serviceAccountKeyAdmin      # manage SA keys (if you allow them)
+  roles/serviceusage.serviceUsageAdmin  # enable/disable APIs (apply + prune)
 )
 
 # APIs enabled on the host project.

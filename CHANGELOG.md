@@ -272,6 +272,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `scripts/bootstrap-org-admin.sh` now grants `roles/serviceusage.serviceUsageAdmin`
+  on the organization as well, so the seed account can enable/disable APIs
+  (needed by `disable_on_destroy` and by pruning the `apis` section). Existing
+  seed accounts need the binding added, or the script re-run with `--no-key`.
+- Prune no longer proposes disabling an API that a declared resource depends on
+  when `auto_enable_apis=False`. Only APIs that are neither explicit, derived
+  from a declared resource, nor a protected default are pruned.
 - `output` and `apply --plan-file` now resolve the default workdir from the
   stack's own `name`, matching `render`/`plan`/`apply`. They import the config
   only for that lookup (never render) and fall back to the config file stem

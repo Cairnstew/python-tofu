@@ -10,7 +10,7 @@ Only sections that OpenTofu can import safely are supported:
 - ``subscriptions``    — ``google_pubsub_subscription`` (before topics, which need them gone)
 - ``topics``           — ``google_pubsub_topic``
 - ``service_accounts`` — ``google_service_account`` (Google-managed defaults skipped)
-- ``apis``             — ``google_project_service`` (essential APIs protected)
+- ``apis``             — ``google_project_service`` (essential and dependency APIs protected)
 
 Discovery uses the service's own read API (Storage, IAM, Service Usage) rather
 than Cloud Asset Inventory: CAI is eventually consistent, so a bucket deleted a
@@ -29,7 +29,7 @@ from typing import Any, Literal
 from python_tofu.core.exceptions import PruneError
 from python_tofu.core.hcl import Attr, Block, body
 from python_tofu.core.prune import PrunableResource, PrunePlan
-from python_tofu.providers.gcp.apis import declared_apis
+from python_tofu.providers.gcp.apis import required_apis
 from python_tofu.providers.gcp.live import (
     access_token,
     credential_identities,
@@ -325,7 +325,12 @@ def _service_account_plan(
 
 def _api_plan(stack: GcpStack, token: str) -> list[PrunableResource]:
     project = stack.provider.project
-    declared = {api.service for api in declared_apis(stack) if api.project == project}
+    # Explicit entries plus every API a declared resource needs. Dependencies
+    # stay declared even when ``auto_enable_apis=False``: disabling an API a
+    # declared resource depends on would break the next apply, and the flag only
+    # says the stack does not own enablement.
+    declared = {api.service for api in stack.apis if api.project == project}
+    declared.update(required_apis(stack).get(project, ()))
     found: list[PrunableResource] = []
     for data in list_services(project, token):
         service = _basename(data.get("name"))

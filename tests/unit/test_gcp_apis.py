@@ -257,6 +257,33 @@ def test_prune_treats_auto_apis_as_declared(monkeypatch: pytest.MonkeyPatch) -> 
     assert services == {"API bigquery.googleapis.com"}
 
 
+def test_prune_keeps_dependency_apis_without_auto_enable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gcp_prune, "access_token", lambda stack: "token")
+    monkeypatch.setattr(gcp_prune, "list_buckets", lambda project, token: [])
+    monkeypatch.setattr(gcp_prune, "list_service_accounts", lambda project, token: [])
+    monkeypatch.setattr(gcp_prune, "list_topics", lambda project, token: [])
+    monkeypatch.setattr(gcp_prune, "list_subscriptions", lambda project, token: [])
+    monkeypatch.setattr(
+        gcp_prune,
+        "list_services",
+        lambda project, token: [
+            {"name": "projects/1/services/run.googleapis.com", "state": "ENABLED"},
+            {"name": "projects/1/services/bigquery.googleapis.com", "state": "ENABLED"},
+        ],
+    )
+
+    stack = _stack(
+        provider=GcpProvider(project=PROJECT, region="us-central1", auto_enable_apis=False),
+        cloud_run_services=[_service()],
+    )
+    plan = gcp_prune.discover(stack, ("apis",))
+
+    services = {resource.description for resource in plan.resources}
+    assert services == {"API bigquery.googleapis.com"}
+
+
 def test_artifact_repository_needs_artifact_registry() -> None:
     from python_tofu.providers.gcp import ArtifactRegistryRepository
 

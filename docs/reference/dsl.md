@@ -114,7 +114,11 @@ Supported sections and safety rules:
   eventually consistent.
 - `apis` — `google_project_service`; essential APIs (Cloud Asset Inventory,
   IAM, Cloud Resource Manager, Service Usage, Storage, logging, monitoring,
-  billing budgets) are never disabled.
+  billing budgets) are never disabled, and neither is any API a declared
+  resource depends on, even with `auto_enable_apis=False`. Disabling the
+  remaining APIs needs `serviceusage.services.disable`, for example
+  `roles/serviceusage.serviceUsageAdmin` (granted by
+  `scripts/bootstrap-org-admin.sh`).
 
 `extra_files` (raw HCL) is invisible to discovery, so a stack that uses it must
 set `allow_raw_hcl=True` before prune will run. Otherwise a bucket declared only

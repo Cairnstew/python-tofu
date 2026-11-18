@@ -445,10 +445,14 @@ plan output.
 `seanc:0400`). It was rotated on 2026-11-17 to
 `org-admin@nixos-infra-496517.iam.gserviceaccount.com`, the org-level seed admin
 created by `scripts/bootstrap-org-admin.sh`. It holds `projectCreator`,
-`folderAdmin`, `securityAdmin`, `serviceAccountAdmin`, `serviceAccountKeyAdmin`
-and `orgpolicy.policyAdmin` on organization `595961694991` (project
-`nixos-infra-496517`), plus `billing.user` on the billing account. The earlier
-`nixos-infra-admin@...` key was the project-scoped rotation. `.envrc` exports
+`folderAdmin`, `securityAdmin`, `serviceAccountAdmin`, `serviceAccountKeyAdmin`,
+`orgpolicy.policyAdmin` and `serviceUsageAdmin` on organization `595961694991`
+(project `nixos-infra-496517`), plus `billing.user` on the billing account.
+`serviceUsageAdmin` is what allows disabling APIs (`prune` of the `apis`
+section, `disable_on_destroy`); an account created before a role was added to
+the script needs the binding re-applied — re-run the script with `--no-key`,
+which re-grants every org role without touching an existing key.
+The earlier `nixos-infra-admin@...` key was the project-scoped rotation. `.envrc` exports
 `GOOGLE_APPLICATION_CREDENTIALS`, `TF_VAR_gcp_credentials_file`,
 `GOOGLE_PROJECT`, `GOOGLE_CLOUD_PROJECT`, `CLOUDSDK_CORE_PROJECT` and
 `TF_VAR_project` when the file is readable. Run `direnv allow` after editing
