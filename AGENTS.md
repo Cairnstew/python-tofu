@@ -73,6 +73,8 @@ must be added to its `needs` list or it will not be required.
 | `src/python_tofu/models/`, `services/`, `hcl.py`, `loader.py` | Backwards-compatible re-export shims |
 | `src/python_tofu/cli/main.py` | Default GCP Typer app (`build_app(GCP, ...)`) |
 | `examples/gcp_bootstrap/` | End-to-end project/service-account/bucket example |
+| `examples/org_projects/` | Two-phase per-project identities (admin → impersonated provisioner), no keys |
+| `scripts/bootstrap-org-admin.sh` | One-time org admin SA bootstrap with a temporary `gcloud auth login` |
 | `tests/` | Unit, integration and Nix-eval suites |
 | `.github/workflows/` | CI/CD workflows |
 

@@ -15,6 +15,7 @@ from python_tofu.providers.gcp.models import (
     ProjectApi,
     ProjectIamMember,
     ServiceAccount,
+    ServiceAccountIamMember,
     StorageBucket,
     StorageClass,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "ProjectIamMember",
     "RenderResult",
     "ServiceAccount",
+    "ServiceAccountIamMember",
     "StorageBucket",
     "StorageClass",
     "TofuModel",

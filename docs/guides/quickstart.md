@@ -13,6 +13,28 @@ On this machine `.envrc` exports the agenix `gcloud-auth` service-account key as
 `GOOGLE_APPLICATION_CREDENTIALS` (plus the derived project variables) when the
 secret is readable. Run `direnv allow` once after changing `.envrc`.
 
+## Bootstrap an organization admin account
+
+A fresh organization has no credential that can create projects. Create the
+one-time "seed" service account before rendering any stack:
+
+```bash
+nix develop .#cloud
+just bootstrap-admin my-project-id --impersonator you@example.com
+```
+
+The script signs in with a throwaway `gcloud auth login` (its own
+`CLOUDSDK_CONFIG`, discarded on exit, so your normal session is untouched),
+creates `org-admin@my-project-id.iam.gserviceaccount.com`, grants it the
+org-level `projectCreator`, `folderAdmin`, `securityAdmin` and related roles,
+grants `billing.user` on the billing account, and writes a JSON key to the
+gitignored `.cache/gcp-keys/`.
+
+Prefer `--no-key --impersonator you@example.com` when you can impersonate
+instead of holding a long-lived key. When `gcloud` is not on `PATH` the script
+re-executes itself in `nix develop .#cloud`; run
+`./scripts/bootstrap-org-admin.sh --help` for every option.
+
 ## 1. Enter the development environment
 
 ```bash

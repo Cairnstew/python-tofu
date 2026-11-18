@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ServiceAccountIamMember` (and its `StackPart`/Nix section): a
+  `google_service_account_iam_member` binding for delegation —
+  `roles/iam.serviceAccountTokenCreator` (impersonation) or
+  `roles/iam.serviceAccountUser` (actAs) on one specific account.
+- `ProjectIamMember.service_account`: set a declared account id or email instead
+  of a prefixed `member`; it renders as
+  `serviceAccount:${google_service_account.sa_x.email}` so the grant waits for
+  the account. `member` and `service_account` are mutually exclusive.
+- `GcpProvider.impersonate_service_account` now also applies to the wrapper's
+  read-only calls (`doctor`, `limits --usage live`, `prune`, `ServiceCatalog`),
+  not just the rendered provider block.
+- `examples/org_projects/`: a two-phase, keyless per-project layout (dataclass
+  specs in `models.py`, an org-admin `platform.py`, and an impersonated
+  `acme_data.py`).
+- `scripts/bootstrap-org-admin.sh` (also `just bootstrap-admin`): creates the
+  one-time org-level seed admin service account, grants org roles and
+  `billing.user`, and optionally writes a JSON key. It uses a throwaway
+  `gcloud auth login` in its own `CLOUDSDK_CONFIG`, re-executes itself in
+  `nix develop .#cloud` when `gcloud` is missing, and writes keys under the
+  gitignored `.cache/gcp-keys/` unless `--force` says otherwise.
 - Nix-authored stacks. `nix/stack.nix` mirrors the `GcpStack` fields as a Nix
   module option tree, with sections keyed by a local name whose key fills the
   resource identity field (`buckets.artifacts` → `name = "artifacts"`). The

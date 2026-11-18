@@ -16,6 +16,7 @@ from python_tofu import (
     GcpStack,
     ProjectApi,
     ServiceAccount,
+    ServiceAccountIamMember,
     StorageBucket,
 )
 
@@ -48,6 +49,13 @@ stack = GcpStack(
             display_name="CI runner",
             description="Used by CI to publish build artifacts",
             roles=["roles/iam.serviceAccountUser", "roles/storage.admin"],
+        )
+    ],
+    service_account_iam_members=[
+        ServiceAccountIamMember(
+            service_account="ci-runner",
+            role="roles/iam.serviceAccountTokenCreator",
+            member="user:alice@example.com",
         )
     ],
     buckets=[

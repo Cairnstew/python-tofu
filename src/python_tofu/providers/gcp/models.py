@@ -355,15 +355,73 @@ class BucketObject(TofuModel):
 
 
 class ProjectIamMember(TofuModel):
-    """A standalone ``google_project_iam_member`` binding."""
+    """A standalone ``google_project_iam_member`` binding.
+
+    Set exactly one of:
+
+    - ``member`` — a full principal, e.g. ``user:alice@example.com`` or
+      ``serviceAccount:sa@project.iam.gserviceaccount.com``;
+    - ``service_account`` — a declared account id or email. It renders as
+      ``serviceAccount:${google_service_account.sa_x.email}``, so the binding
+      waits for the account and cannot drift from its generated email.
+    """
 
     project: str
     role: str
-    member: str = Field(
+    member: str | None = Field(
+        default=None,
         min_length=3,
         description=(
             "IAM principal, e.g. user:alice@example.com or "
             "serviceAccount:sa@project.iam.gserviceaccount.com"
+        ),
+    )
+    service_account: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Declared account_id or email, rendered as a serviceAccount principal",
+    )
+
+    @field_validator("role")
+    @classmethod
+    def _valid_role(cls, value: str) -> str:
+        return validate_role(value)
+
+    @field_validator("service_account")
+    @classmethod
+    def _service_account_is_id_or_email(cls, value: str | None) -> str | None:
+        if value and "/" in value and not is_reference_template(value):
+            raise ValueError("service_account must be a declared account_id or email")
+        return value
+
+    @model_validator(mode="after")
+    def _one_principal(self) -> "ProjectIamMember":
+        if bool(self.member) == bool(self.service_account):
+            raise ValueError("exactly one of member or service_account is required")
+        return self
+
+
+class ServiceAccountIamMember(TofuModel):
+    """A ``google_service_account_iam_member`` binding on the account itself.
+
+    This is the delegation primitive: grant ``roles/iam.serviceAccountUser``
+    (actAs) or ``roles/iam.serviceAccountTokenCreator`` (impersonation) to a
+    principal on one specific service account. ``service_account`` names the
+    target (declared account id or email) and ``member`` is the principal that
+    receives the role — with a prefix (``user:``/``group:``/``serviceAccount:``)
+    or as a declared account id/email.
+    """
+
+    service_account: str = Field(
+        min_length=1,
+        description="Target account: declared account_id, email or full resource name",
+    )
+    role: str
+    member: str = Field(
+        min_length=3,
+        description=(
+            "IAM principal that receives the role, e.g. user:alice@example.com, "
+            "serviceAccount:sa@project.iam.gserviceaccount.com, or a declared account_id"
         ),
     )
 
@@ -1213,6 +1271,7 @@ __all__ = [
     "SecretVolume",
     "SecretVolumeItem",
     "ServiceAccount",
+    "ServiceAccountIamMember",
     "StorageBucket",
     "StorageClass",
     "TcpProbe",

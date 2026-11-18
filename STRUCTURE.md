@@ -95,6 +95,11 @@
 │   ├── gcp_pubsub/
 │   │   ├── stack.py              # Topic/subscription, push + dead letter
 │   │   └── README.md
+│   ├── org_projects/
+│   │   ├── models.py             # Dataclass project/identity specs
+│   │   ├── platform.py           # Phase 1: project, accounts, delegation grants
+│   │   ├── acme_data.py          # Phase 2: impersonated project resources
+│   │   └── README.md
 │   └── gcp_test_infra/
 │       ├── stack.py              # Free-tier bucket, topic, subscription, account
 │       └── README.md
@@ -138,6 +143,9 @@
 │   ├── provider-versions.nix     # Single source for mirrored provider versions
 │   ├── module.nix                # NixOS oneshot service + timer
 │   └── home-module.nix           # home.packages
+│
+├── scripts/
+│   └── bootstrap-org-admin.sh      # One-time org admin SA seed (temp gcloud login)
 │
 ├── docs/
 │   ├── guides/

@@ -15,6 +15,12 @@ repository's `.envrc` exports `GOOGLE_APPLICATION_CREDENTIALS` from the agenix
 `GcpProvider.credentials` to an explicit key path; prefer the environment/agenix
 route so credentials never enter the Python config.
 
+`GcpProvider.impersonate_service_account` applies to both the rendered provider
+block and the wrapper's own read-only calls (`doctor`, `limits --usage live`,
+`prune`, `ServiceCatalog`): the source credential mints a token for the target
+through the IAM Credentials API. The source identity needs
+`roles/iam.serviceAccountTokenCreator` on the target.
+
 ## `GcpStack`
 
 | Field | Type | Default | Description |
@@ -27,6 +33,7 @@ route so credentials never enter the Python config.
 | `buckets` | `list[StorageBucket]` | `[]` | GCS buckets |
 | `bucket_objects` | `list[BucketObject]` | `[]` | Objects (content) inside buckets |
 | `iam_members` | `list[ProjectIamMember]` | `[]` | Standalone project IAM bindings |
+| `service_account_iam_members` | `list[ServiceAccountIamMember]` | `[]` | Delegation (actAs / tokenCreator) on a service account |
 | `cloud_run_services` | `list[CloudRunService]` | `[]` | Container image services |
 | `cloud_run_functions` | `list[CloudRunFunction]` | `[]` | 2nd-gen functions from a source zip |
 | `cloud_run_jobs` | `list[CloudRunJob]` | `[]` | Batch jobs (runners) |
@@ -222,7 +229,7 @@ only *declares* them — nothing is enabled until apply.
 | `region` | `str` | `"us-central1"` | Default region |
 | `zone` | `str \| None` | `None` | Default zone |
 | `credentials` | `str \| None` | `None` | Path to a service-account key |
-| `impersonate_service_account` | `str \| None` | `None` | Impersonation target |
+| `impersonate_service_account` | `str \| None` | `None` | Impersonation target for the provider block and the wrapper's read-only calls |
 | `default_labels` | `dict[str, str]` | `{}` | Provider-wide labels |
 | `auto_enable_apis` | `bool` | `true` | Enable and order the APIs declared resources need |
 | `default_apis` | `tuple[str, ...]` | control-plane baseline | APIs enabled on every owned project and protected from prune |
@@ -282,6 +289,28 @@ name are not affected. A 429 surfaces as `ServiceUsageError` with a hint.
 `account_id` follows the same 6–30 character rules as project IDs. Each entry in
 `roles` becomes a `google_project_iam_member` bound to the service account's
 generated email.
+
+Delegation is a different resource: see
+[`ServiceAccountIamMember`](#serviceaccountiammember).
+
+## `ServiceAccountIamMember`
+
+A `google_service_account_iam_member` binding on one service account — the
+primitive for "who may act as / impersonate this identity".
+
+```python
+ServiceAccountIamMember(
+    service_account="ci-runner",                     # declared id or email
+    role="roles/iam.serviceAccountTokenCreator",
+    member="user:alice@example.com",                 # prefix, or declared id/email
+)
+```
+
+`service_account` resolves to `google_service_account.sa_ci_runner.name` for a
+declared account and to `projects/<project>/serviceAccounts/<email>` otherwise.
+`member` accepts a full principal (`user:`, `group:`, `serviceAccount:`,
+`domain:`) or a declared account id/email, which renders as an interpolation so
+the grant waits for the account. It declares the `iam` API only.
 
 ## `StorageBucket`
 
@@ -351,9 +380,14 @@ Limits of the representation:
 
 ## `ProjectIamMember`
 
-A standalone `google_project_iam_member` binding. `member` must include its
-principal prefix, e.g. `user:alice@example.com` or
-`serviceAccount:sa@project.iam.gserviceaccount.com`.
+A standalone `google_project_iam_member` binding. Set exactly one of `member` or
+`service_account`:
+
+- `member` must include its principal prefix, e.g. `user:alice@example.com` or
+  `serviceAccount:sa@project.iam.gserviceaccount.com`;
+- `service_account` is a declared account id or email and renders as
+  `serviceAccount:${google_service_account.sa_x.email}`, so the binding waits
+  for the account.
 
 ## `BackendConfig` (`GcpBackendConfig`)
 

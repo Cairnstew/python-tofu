@@ -60,10 +60,39 @@ class GoogleApiError(TofuError):
 LiveUsageError = GoogleApiError
 
 
-def access_token_for(credentials_path: str | None = None) -> str:
-    """Return an OAuth token for a key path (ADC fallback)."""
+def _normalise_impersonation(target: str | None) -> str | None:
+    """Return a bare service-account email, or ``None`` when impersonation is off."""
+
+    if not target:
+        return None
+    value = target.strip()
+    prefix = "serviceAccount:"
+    if value.startswith(prefix):
+        value = value[len(prefix) :]
+    if "@" not in value:
+        raise GoogleApiError(
+            f"impersonate_service_account must be a service-account email: {target!r}"
+        )
+    return value
+
+
+def access_token_for(
+    credentials_path: str | None = None,
+    impersonate_service_account: str | None = None,
+) -> str:
+    """Return an OAuth token for a key path (ADC fallback).
+
+    When ``impersonate_service_account`` is set, the source credential mints a
+    token for that service account through the IAM Credentials API. This keeps
+    the wrapper's read-only calls (doctor, limits, prune) on the same effective
+    identity the rendered provider block uses, instead of silently falling back
+    to the broad provisioning key.
+    """
+
+    target = _normalise_impersonation(impersonate_service_account)
 
     try:
+        from google.auth import impersonated_credentials
         from google.auth.transport.requests import Request
         from google.oauth2 import service_account
     except ImportError as exc:  # pragma: no cover - dependency is declared
@@ -77,14 +106,24 @@ def access_token_for(credentials_path: str | None = None) -> str:
     try:
         if path:
             loader = service_account.Credentials.from_service_account_file
-            creds = loader(path, scopes=scopes)  # type: ignore[no-untyped-call]
+            source = loader(path, scopes=scopes)  # type: ignore[no-untyped-call]
         else:
             import google.auth
 
-            creds, _ = google.auth.default(scopes=scopes)
+            source, _ = google.auth.default(scopes=scopes)
+
+        creds = source
+        if target:
+            creds = impersonated_credentials.Credentials(  # type: ignore[no-untyped-call]
+                source_credentials=source,
+                target_principal=target,
+                target_scopes=scopes,
+                lifetime=3600,
+            )
         creds.refresh(Request())
     except Exception as exc:  # google-auth raises several unrelated types
-        raise GoogleApiError(f"could not obtain Google credentials: {exc}") from exc
+        suffix = f" as {target}" if target else ""
+        raise GoogleApiError(f"could not obtain Google credentials{suffix}: {exc}") from exc
 
     token = getattr(creds, "token", None)
     if not token:
@@ -95,7 +134,10 @@ def access_token_for(credentials_path: str | None = None) -> str:
 def access_token(stack: GcpStack) -> str:
     """Return an OAuth token for the stack's credentials (ADC fallback)."""
 
-    return access_token_for(stack.provider.credentials)
+    return access_token_for(
+        stack.provider.credentials,
+        impersonate_service_account=stack.provider.impersonate_service_account,
+    )
 
 
 def get_json(

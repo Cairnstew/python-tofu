@@ -28,6 +28,7 @@ from python_tofu.providers.gcp.models import (
     PubSubSubscription,
     PubSubTopic,
     ServiceAccount,
+    ServiceAccountIamMember,
     StorageBucket,
 )
 
@@ -83,6 +84,7 @@ class GcpStack(BaseStack):
     buckets: list[StorageBucket] = Field(default_factory=list)
     bucket_objects: list[BucketObject] = Field(default_factory=list)
     iam_members: list[ProjectIamMember] = Field(default_factory=list)
+    service_account_iam_members: list[ServiceAccountIamMember] = Field(default_factory=list)
     cloud_run_services: list[CloudRunService] = Field(default_factory=list)
     cloud_run_functions: list[CloudRunFunction] = Field(default_factory=list)
     cloud_run_jobs: list[CloudRunJob] = Field(default_factory=list)
@@ -295,18 +297,53 @@ class GcpStack(BaseStack):
             )
 
         account_ids = {account.account_id for account in self.service_accounts}
-        referenced_accounts = {
-            account
-            for service in self.cloud_run_services
-            for account in service.invoker_service_accounts
-            if "@" not in account and not is_reference_template(account)
-        } | {
-            item.push_service_account
-            for item in self.pubsub_subscriptions
-            if item.push_service_account
-            and "@" not in item.push_service_account
-            and not is_reference_template(item.push_service_account)
+        account_emails = {
+            f"{account.account_id}@{account.project}.iam.gserviceaccount.com"
+            for account in self.service_accounts
         }
+        known_accounts = account_ids | account_emails
+
+        def _bare_unknown(value: str) -> bool:
+            """A bare token that is neither a declared account nor an email/ref."""
+
+            return (
+                "@" not in value
+                and ":" not in value
+                and "/" not in value
+                and not is_reference_template(value)
+                and value not in known_accounts
+            )
+
+        referenced_accounts = (
+            {
+                account
+                for service in self.cloud_run_services
+                for account in service.invoker_service_accounts
+                if "@" not in account and not is_reference_template(account)
+            }
+            | {
+                item.push_service_account
+                for item in self.pubsub_subscriptions
+                if item.push_service_account
+                and "@" not in item.push_service_account
+                and not is_reference_template(item.push_service_account)
+            }
+            | {
+                item.service_account
+                for item in self.service_account_iam_members
+                if _bare_unknown(item.service_account)
+            }
+            | {
+                item.member
+                for item in self.service_account_iam_members
+                if _bare_unknown(item.member)
+            }
+            | {
+                item.service_account
+                for item in self.iam_members
+                if item.service_account is not None and _bare_unknown(item.service_account)
+            }
+        )
         missing_accounts = sorted(referenced_accounts - account_ids)
         if missing_accounts:
             raise ValueError(

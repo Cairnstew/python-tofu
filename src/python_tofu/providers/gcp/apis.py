@@ -28,6 +28,7 @@ from python_tofu.providers.gcp.models import (
     PubSubSubscription,
     PubSubTopic,
     ServiceAccount,
+    ServiceAccountIamMember,
     StorageBucket,
     Volume,
 )
@@ -98,6 +99,9 @@ def apis_for(stack: "GcpStack", resource: object) -> tuple[str, ...]:
         return BASE_APIS
     if isinstance(resource, ProjectIamMember):
         return (IAM, CLOUD_RESOURCE_MANAGER)
+    if isinstance(resource, ServiceAccountIamMember):
+        # The binding is written through the IAM API on the account itself.
+        return (IAM,)
     if isinstance(resource, StorageBucket):
         return (STORAGE,)
     if isinstance(resource, BucketObject):
@@ -156,6 +160,24 @@ def _owned_projects(stack: "GcpStack") -> set[str]:
     return {stack.provider.project, *[project.project_id for project in stack.projects]}
 
 
+def _service_account_project(stack: "GcpStack", value: str) -> str:
+    """Project that owns a service-account target (declared id/email or name)."""
+
+    if value.startswith("projects/"):
+        parts = value.split("/")
+        if len(parts) > 1 and parts[1] not in ("-", ""):
+            return parts[1]
+    for account in stack.service_accounts:
+        email = f"{account.account_id}@{account.project}.iam.gserviceaccount.com"
+        if value in (account.account_id, email):
+            return account.project
+    _, _, domain = value.partition("@")
+    suffix = ".iam.gserviceaccount.com"
+    if domain.endswith(suffix):
+        return domain.removesuffix(suffix)
+    return stack.provider.project
+
+
 def _resources(stack: "GcpStack") -> Iterator[tuple[str, object]]:
     """Yield ``(project, resource)`` for everything that can need an API."""
 
@@ -174,6 +196,8 @@ def _resources(stack: "GcpStack") -> Iterator[tuple[str, object]]:
         yield stack.provider.project, budget
     for binding in stack.iam_members:
         yield binding.project, binding
+    for sa_binding in stack.service_account_iam_members:
+        yield _service_account_project(stack, sa_binding.service_account), sa_binding
     for repository in stack.artifact_registry_repositories:
         yield repository.project, repository
     for service in stack.cloud_run_services:
