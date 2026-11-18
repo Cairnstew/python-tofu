@@ -52,8 +52,35 @@ calls reusable workflows.
 | `test-integration` | Python changes | `pytest tests/integration` (gating) |
 | `nix` | Nix/package/example changes | `nix flake check` + `nix build` |
 | `audit` | Python changes | `pip-audit` + `bandit` |
+| `ci-success` | always | aggregate gate — fails if any job above did not pass or skip |
 
 Python jobs use `astral-sh/setup-uv@v5` and `uv run` on the GitHub runner.
+
+## Branch protection (`main`)
+
+`main` is guarded by a repository ruleset (`main protection`), not by the older
+legacy branch-protection API:
+
+| Rule | Setting |
+|------|---------|
+| Force pushes | blocked (`non_fast_forward`) |
+| Branch deletion | blocked (`deletion`) |
+| Merge commits | blocked (`required_linear_history`) — squash or rebase only |
+| Pull request | required; 0 approvals (solo repo), stale reviews dismissed, all review threads resolved |
+| Status checks | `ci-success` required, and the branch must be up to date with `main` before merging |
+
+The single required context is `ci-success`, not the individual jobs. Those
+jobs are path-filtered, so requiring `lint`/`nix` directly would leave a
+required check unreported (and the PR unmergeable) on any change that skips
+them. `ci-success` always runs and treats `skipped` as a pass, while `failure`
+and `cancelled` fail it — adding a job to `ci.yml` only needs it listed under
+`ci-success.needs`.
+
+Repository admins hold an `always` bypass on the ruleset, so a direct push or an
+emergency merge is still possible. The weekly `update-flake-lock.yml` PR is
+opened with `GITHUB_TOKEN`, whose pushes do not trigger workflows, so that PR
+reports no `ci-success` and needs an admin bypass merge (or a PAT/App token in
+that workflow).
 
 ### `release.yml` (tag push `v*`, or manual dispatch)
 
