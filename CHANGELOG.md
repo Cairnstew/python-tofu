@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `projects` prune section: deletes `ACTIVE` projects under the stack's
+  organization that the stack does not declare. The organization comes from the
+  provider project's ancestry and the sweep walks folders downward, so another
+  organization's projects are never listed. The organization itself, the
+  provider project, declared/`external_projects` entries,
+  `PruneConfig.protected_projects` and the project that owns the active
+  credential are always exempt. `projects` is never implied by `all`; the
+  section must be named. The scratch block sets `deletion_policy = "DELETE"`
+  (the provider defaults an imported project to `PREVENT`, which blocks the
+  destroy) and ignores billing account, org/folder parent and labels, so the
+  adopt step never edits the project.
+- `PruneConfig.protected_projects`: project ids that prune must never delete.
+- `scripts/bootstrap-org-admin.sh` also grants
+  `roles/resourcemanager.projectDeleter` (deleting projects) and
+  `roles/serviceusage.serviceUsageAdmin` (enabling/disabling APIs) at the
+  organization, so the seed account can run the `apis` and `projects` prune
+  sections.
 - `scripts/live-module-vm.sh` (`just test-live-module`): a live end-to-end test
   of the NixOS module. It builds the system in `nix/live-vm.nix`, boots it under
   QEMU and lets the real `python-tofu.service` `apply` the stack in

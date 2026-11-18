@@ -224,9 +224,9 @@ the declared content/file hash with state. There are two useful patterns:
 - **Content-addressed name** — put a hash/version in the key, e.g.
   `"dist/app-${builtins.substring 0 12 (builtins.hashString "sha256" appText)}.js"`.
   Every version is a distinct object. Note that `prune` does not include bucket
-  objects (`GCP_PRUNE_SECTIONS` covers buckets, subscriptions, topics, service
-  accounts and APIs), so old keys accumulate; use a GCS lifecycle rule to
-  expire them.
+  objects (`GCP_PRUNE_SECTIONS` covers buckets, subscriptions, topics,
+  project IAM, service accounts, APIs and projects), so old keys accumulate;
+  use a GCS lifecycle rule to expire them.
 
 For a directory of assets:
 

@@ -121,8 +121,9 @@ in
 
     prune = section ''
       Prune config (`enabled`, `sections`, `include_service_accounts`,
-      `protected_service_accounts`, `protected_iam_roles`, `allow_raw_hcl`).
-      `roles/owner` is always protected.
+      `protected_service_accounts`, `protected_iam_roles`, `protected_projects`,
+      `allow_raw_hcl`). `roles/owner` is always protected. `project_iam` and
+      `projects` are never implied by `all`; name them explicitly.
     '';
 
     extra_files = mkOption {

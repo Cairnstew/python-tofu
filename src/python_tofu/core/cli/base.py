@@ -191,7 +191,7 @@ class BaseCommand:
         for warning in plan.warnings:
             typer.secho(f"Note: {warning}", fg=typer.colors.YELLOW, err=True)
         if explain and plan.skipped:
-            typer.echo("Skipped IAM bindings:")
+            typer.echo("Skipped resources:")
             for detail in plan.skipped:
                 typer.echo(f"    - {detail}")
         if plan.empty:

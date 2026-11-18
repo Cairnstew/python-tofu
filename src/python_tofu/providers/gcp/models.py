@@ -41,6 +41,7 @@ GCP_PRUNE_SECTIONS = (
     "project_iam",
     "service_accounts",
     "apis",
+    "projects",
 )
 
 StorageClass = Literal[

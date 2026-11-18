@@ -22,7 +22,7 @@ GCP = register_provider(
         measure_usage=measure_usage,
         live_measure_usage=live_measure_usage,
         prune_sections=GCP_PRUNE_SECTIONS,
-        prune_explicit_only=("project_iam",),
+        prune_explicit_only=("project_iam", "projects"),
         prune_plan=discover,
         doctor_checks=run_checks,
     )

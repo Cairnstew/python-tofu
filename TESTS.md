@@ -19,6 +19,7 @@ tests/
 │   ├── test_gcp_live.py   #   Cloud Asset Inventory parsing and free-tier rules
 │   ├── test_gcp_objects.py #  BucketObject validation and HCL shapes
 │   ├── test_gcp_pubsub.py #   Topics, subscriptions, push and dead letters
+│   ├── test_gcp_project_prune.py # Project discovery, exemptions and scratch block
 │   ├── test_gcp_services.py # Service Usage catalog, resolution and throttling
 │   ├── test_prune.py      #   Live discovery and scratch-module reaper
 │   ├── test_provider_plugin.py # Registry + core renderer with a non-GCP provider
@@ -78,6 +79,7 @@ pytest tests/                 # everything
 | `providers/gcp/apis.py` | `unit/` | Derived API sets, `depends_on` ordering, external projects |
 | `providers/gcp/services.py` | `unit/` | Service Usage parsing, 429/404 handling, name resolution |
 | `providers/gcp/prune.py`, `core/prune.py` | `unit/` | Discovery rules, protected resources, scratch-module plan |
+| `providers/gcp/prune.py` (projects) | `unit/` | Organization walk, exemptions, minimal `google_project` block |
 | `providers/gcp/models.py` (`BucketObject`) | `unit/` | Source exclusivity, key rules, bucket references |
 | `providers/gcp/models.py` (Pub/Sub, Cloud Run, budget) | `unit/` | Validation and import-time errors |
 | `providers/gcp/renderer.py` (`BucketObject`) | `unit/` | Inline/source/URL blocks, bytes materialisation, http provider |

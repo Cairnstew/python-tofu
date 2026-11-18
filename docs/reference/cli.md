@@ -134,7 +134,7 @@ summary derived from `tofu show -json`.
 | `--json` | Print the summary as JSON |
 | `--exit-code` | Exit `2` when the plan has changes, `0` when empty, `1` on error |
 | `--prune` | Also list live resources the stack does not declare (preview only) |
-| `--prune-section NAME` | Limit the preview to `buckets`, `subscriptions`, `topics`, `project_iam`, `service_accounts` or `apis` (repeatable) |
+| `--prune-section NAME` | Limit the preview to `buckets`, `subscriptions`, `topics`, `project_iam`, `service_accounts`, `apis` or `projects` (repeatable) |
 | `--allow-service-accounts` | Second gate for listing service accounts (also needs `include_service_accounts=True`) |
 
 ```bash
@@ -163,7 +163,7 @@ Render, run `tofu init`, then `tofu apply`.
 | `--var-file PATH` | Pass a tfvars file to tofu (repeatable) |
 | `--var NAME=VALUE` | Set a variable on the command line (repeatable) |
 | `--prune` | After applying, delete live resources the stack does not declare |
-| `--prune-section NAME` | Prune only `buckets`, `subscriptions`, `topics`, `project_iam`, `service_accounts` or `apis` (repeatable, implies `--prune`) |
+| `--prune-section NAME` | Prune only `buckets`, `subscriptions`, `topics`, `project_iam`, `service_accounts`, `apis` or `projects` (repeatable, implies `--prune`) |
 | `--allow-service-accounts` | Second gate for pruning service accounts (also needs `include_service_accounts=True`) |
 
 `--var`/`--var-file` cannot be combined with `--plan-file`: OpenTofu bakes the
@@ -211,12 +211,12 @@ python-tofu apply --config infra.py --prune --auto-approve  # apply, then prune
 
 | Option | Description |
 |--------|-------------|
-| `--section NAME` | Prune one section (repeatable): `buckets`, `subscriptions`, `topics`, `project_iam`, `service_accounts`, `apis` |
-| `--all` | Select every supported section except service accounts and project IAM |
+| `--section NAME` | Prune one section (repeatable): `buckets`, `subscriptions`, `topics`, `project_iam`, `service_accounts`, `apis`, `projects` |
+| `--all` | Select every supported section except service accounts, project IAM and projects |
 | `--allow-service-accounts` | Second gate for service accounts; also requires `include_service_accounts=True` |
 | `--apply` | Actually delete; without it the command only lists |
 | `--auto-approve` | Skip the deletion confirmation |
-| `--explain` | List every skipped IAM binding with its reason |
+| `--explain` | List every skipped resource (IAM bindings, protected projects) with its reason |
 
 `plan --prune` only previews. `apply --prune` prunes after a successful apply
 and always skips `project_iam` (IAM is eventually consistent); use the

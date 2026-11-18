@@ -11,6 +11,8 @@ Only sections that OpenTofu can import safely are supported:
 - ``topics``           — ``google_pubsub_topic``
 - ``service_accounts`` — ``google_service_account`` (Google-managed defaults skipped)
 - ``apis``             — ``google_project_service`` (essential and dependency APIs protected)
+- ``projects``         — ``google_project`` (the organization, declared/external projects and
+  the project that owns the active credential are never candidates; explicit opt-in only)
 
 Discovery uses the service's own read API (Storage, IAM, Service Usage) rather
 than Cloud Asset Inventory: CAI is eventually consistent, so a bucket deleted a
@@ -65,6 +67,7 @@ IAM_BASE = "https://iam.googleapis.com/v1"
 SERVICE_USAGE_BASE = "https://serviceusage.googleapis.com/v1"
 PUBSUB_BASE = "https://pubsub.googleapis.com/v1"
 CRM_BASE = "https://cloudresourcemanager.googleapis.com/v1"
+CRM_FOLDERS_BASE = "https://cloudresourcemanager.googleapis.com/v2"
 
 #: APIs the wrapper or the cloud itself needs to finish a prune; never disable.
 #: ``GcpProvider.default_apis`` adds to this set (see ``_api_plan``).
@@ -72,6 +75,9 @@ PROTECTED_APIS = frozenset(DEFAULT_APIS)
 
 #: Local parts of auto-created service accounts (compute, appspot, agents, ...).
 _DEFAULT_ACCOUNT_RE = re.compile(r"^(?:\d+|\d+-compute|service-\d+|cloudservices)$")
+
+#: Domain suffix of user-created service accounts; the project id is the prefix.
+_SERVICE_ACCOUNT_SUFFIX = ".iam.gserviceaccount.com"
 
 _STORAGE_CLASSES: dict[str, StorageClass] = {
     "STANDARD": "STANDARD",
@@ -125,6 +131,56 @@ def list_topics(project: str, token: str) -> list[dict[str, Any]]:
 
 def list_subscriptions(project: str, token: str) -> list[dict[str, Any]]:
     return _paged(f"{PUBSUB_BASE}/projects/{project}/subscriptions", token, {}, "subscriptions")
+
+
+def list_projects(token: str, parent: str) -> list[dict[str, Any]]:
+    """Projects directly under ``organizations/<id>`` or ``folders/<id>``.
+
+    The Resource Manager listing is filtered by parent type/id so the sweep stays
+    inside one organization; projects in another organization are never listed.
+    """
+
+    kind, _, value = parent.partition("/")
+    if kind not in ("organizations", "folders") or not value:
+        raise ValueError(f"unsupported project parent {parent!r}")
+    return _paged(
+        f"{CRM_BASE}/projects",
+        token,
+        {"filter": f"parent.type:{kind.removesuffix('s')} parent.id:{value}"},
+        "projects",
+    )
+
+
+def list_folders(parent: str, token: str) -> list[dict[str, Any]]:
+    """Immediate child folders of an organization or folder."""
+
+    return _paged(f"{CRM_FOLDERS_BASE}/folders", token, {"parent": parent}, "folders")
+
+
+def list_org_projects(token: str, organization: str) -> list[dict[str, Any]]:
+    """Every project under ``organization``, descending through folders."""
+
+    scope = organization if "/" in organization else f"organizations/{organization}"
+    projects = list_projects(token, scope)
+    for folder in list_folders(scope, token):
+        name = str(folder.get("name") or "")
+        if name:
+            projects.extend(list_org_projects(token, name))
+    return projects
+
+
+def project_organization(token: str, project: str) -> str | None:
+    """Organization id from a project's ancestry, or ``None`` if it has none.
+
+    ``getAncestry`` is a POST in the Resource Manager v1 API, not a GET.
+    """
+
+    payload = post_json(f"{CRM_BASE}/projects/{project}:getAncestry", token, {})
+    for ancestor in payload.get("ancestor") or ():
+        resource = ancestor.get("resourceId") or {}
+        if resource.get("type") == "organization":
+            return str(resource.get("id") or "") or None
+    return None
 
 
 def _public_access_prevention(value: Any) -> Literal["inherited", "enforced"]:
@@ -489,6 +545,119 @@ def _project_iam_plan(
     return found, skipped, details
 
 
+def _protected_projects(stack: GcpStack) -> frozenset[str]:
+    """Projects prune must never delete.
+
+    Beyond the declared/external projects, this protects the provider project and
+    the project that owns the active credential: deleting either would take the
+    tool's own access away mid-run.
+    """
+
+    protected = {
+        stack.provider.project,
+        *stack.external_projects,
+        *(project.project_id for project in stack.projects),
+        *stack.prune.protected_projects,
+    }
+    identities = credential_identities(
+        stack.provider.credentials,
+        stack.provider.impersonate_service_account,
+    )
+    for email in identities:
+        _, _, domain = email.partition("@")
+        if domain.endswith(_SERVICE_ACCOUNT_SUFFIX):
+            protected.add(domain.removesuffix(_SERVICE_ACCOUNT_SUFFIX))
+    return frozenset(protected)
+
+
+def _prune_project_block(project_id: str, name: str) -> Block:
+    """Minimal ``google_project`` block for the scratch module.
+
+    The adopt step imports the live project, so it must not edit it: only the
+    identity fields and ``deletion_policy`` are configured, and every attribute
+    that cannot be reconstructed faithfully (billing account, org/folder parent,
+    labels, the provider's attribution label) is ignored. ``deletion_policy`` is
+    applied on purpose: the provider defaults an imported project to
+    ``PREVENT``, which would block the destroy.
+    """
+
+    return Block(
+        "resource",
+        ("google_project", f"project_{slug(project_id)}"),
+        body(
+            Attr("project_id", project_id),
+            Attr("name", name),
+            Attr("deletion_policy", "DELETE"),
+            Block(
+                "lifecycle",
+                body=body(
+                    Attr(
+                        "ignore_changes",
+                        [
+                            "auto_create_network",
+                            "billing_account",
+                            "folder_id",
+                            "labels",
+                            "org_id",
+                            "terraform_labels",
+                        ],
+                    )
+                ),
+            ),
+        ),
+    )
+
+
+def _project_plan(
+    stack: GcpStack, token: str
+) -> tuple[list[PrunableResource], list[str], list[str]]:
+    """Projects in the stack's organization that the stack does not declare.
+
+    The organization comes from the provider project's ancestry and the sweep
+    walks folders downward, so a project is only ever planned when it belongs to
+    that organization. Only ``ACTIVE`` projects are candidates: a project that
+    is already pending deletion needs no action, and one that is still being
+    created would race the delete.
+    """
+
+    project = stack.provider.project
+    organization = project_organization(token, project)
+    if organization is None:
+        return (
+            [],
+            [f"projects: {project} is not inside an organization; skipping project pruning"],
+            [],
+        )
+    protected = _protected_projects(stack)
+    found: list[PrunableResource] = []
+    skipped: list[str] = []
+    candidates = sorted(
+        list_org_projects(token, organization),
+        key=lambda item: str(item.get("projectId") or ""),
+    )
+    for data in candidates:
+        project_id = str(data.get("projectId") or "")
+        if not project_id:
+            continue
+        if project_id in protected:
+            skipped.append(f"{project_id}: protected project")
+            continue
+        state = str(data.get("lifecycleState") or "ACTIVE").upper()
+        if state != "ACTIVE":
+            skipped.append(f"{project_id}: lifecycle state {state}")
+            continue
+        found.append(
+            PrunableResource(
+                section="projects",
+                address=f"google_project.project_{slug(project_id)}",
+                import_id=project_id,
+                block=_prune_project_block(project_id, str(data.get("name") or project_id)),
+                description=f"project {project_id}",
+            )
+        )
+    return found, [], skipped
+
+
 def discover(stack: GcpStack, sections: tuple[str, ...]) -> PrunePlan:
     """Return live resources in ``sections`` that ``stack`` does not declare."""
 
@@ -510,7 +679,7 @@ def discover(stack: GcpStack, sections: tuple[str, ...]) -> PrunePlan:
     other_projects = sorted(
         ({item.project_id for item in stack.projects} | set(stack.external_projects)) - {project}
     )
-    if other_projects:
+    if other_projects and "projects" not in sections:
         warnings.append(
             f"pruning only inspects {project}; other projects are left untouched: "
             + ", ".join(other_projects)
@@ -537,6 +706,11 @@ def discover(stack: GcpStack, sections: tuple[str, ...]) -> PrunePlan:
         resources.extend(_service_account_plan(stack, token, protected))
     if "apis" in sections:
         resources.extend(_api_plan(stack, token))
+    if "projects" in sections:
+        project_resources, project_warnings, project_details = _project_plan(stack, token)
+        resources.extend(project_resources)
+        warnings.extend(project_warnings)
+        skipped_details.extend(project_details)
     if not resources:
         warnings.append("no undeclared resources found in the selected sections")
     return PrunePlan(
@@ -552,8 +726,12 @@ __all__ = [
     "discover",
     "get_project_iam_bindings",
     "list_buckets",
+    "list_folders",
+    "list_org_projects",
+    "list_projects",
     "list_service_accounts",
     "list_services",
     "list_subscriptions",
     "list_topics",
+    "project_organization",
 ]

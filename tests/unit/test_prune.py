@@ -123,14 +123,15 @@ def test_prune_is_off_by_default() -> None:
 
 
 def test_project_iam_is_explicit_only() -> None:
-    implicit = PruneConfig(enabled=True).resolve(GCP_PRUNE_SECTIONS, ("project_iam",))
+    explicit_only = ("project_iam", "projects")
+    implicit = PruneConfig(enabled=True).resolve(GCP_PRUNE_SECTIONS, explicit_only)
     explicit = PruneConfig(enabled=True, sections=("project_iam",)).resolve(
-        GCP_PRUNE_SECTIONS, ("project_iam",)
+        GCP_PRUNE_SECTIONS, explicit_only
     )
 
     assert "project_iam" not in implicit
     assert explicit == ("project_iam",)
-    assert GCP.prune_explicit_only == ("project_iam",)
+    assert GCP.prune_explicit_only == explicit_only
 
 
 def test_roles_owner_is_always_a_protected_iam_role() -> None:
@@ -187,7 +188,10 @@ def test_allow_raw_hcl_warns_on_discovery(inventory: None) -> None:
 
 # ── discovery ─────────────────────────────────────────────────────────
 def test_discovery_prunes_only_undeclared_resources(inventory: None) -> None:
-    plan = discover(_stack(prune=PruneConfig(enabled=True)), GCP_PRUNE_SECTIONS)
+    # ``projects`` is explicit-only, so a resolved "all" never includes it; this
+    # test covers the per-project sections.
+    sections = tuple(section for section in GCP_PRUNE_SECTIONS if section != "projects")
+    plan = discover(_stack(prune=PruneConfig(enabled=True)), sections)
 
     descriptions = [resource.description for resource in plan.resources]
     assert descriptions == [
@@ -717,7 +721,7 @@ def test_cli_prune_explain_lists_skipped_bindings(
     )
 
     assert result.exit_code == 0, _combined(result)
-    assert "Skipped IAM bindings:" in result.output
+    assert "Skipped resources:" in result.output
     assert "user:alice@example.com roles/viewer (non-service-account)" in result.output
     assert "roles/owner (protected-role)" in result.output
 

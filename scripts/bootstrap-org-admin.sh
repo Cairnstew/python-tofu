@@ -76,6 +76,7 @@ ORG_ROLES=(
   roles/iam.serviceAccountAdmin         # create per-project service accounts
   roles/iam.serviceAccountKeyAdmin      # manage SA keys (if you allow them)
   roles/serviceusage.serviceUsageAdmin  # enable/disable APIs (apply + prune)
+  roles/resourcemanager.projectDeleter  # delete projects (prune projects section)
 )
 
 # APIs enabled on the host project.

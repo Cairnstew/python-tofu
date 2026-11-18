@@ -68,10 +68,11 @@ passed.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | `bool` | `false` | Turn pruning on for the selected sections |
-| `sections` | `tuple[str, ...]` | `("all",)` | `all`, or any of `buckets`, `subscriptions`, `topics`, `project_iam`, `service_accounts`, `apis`. `project_iam` is never implied by `all` |
+| `sections` | `tuple[str, ...]` | `("all",)` | `all`, or any of `buckets`, `subscriptions`, `topics`, `project_iam`, `service_accounts`, `apis`, `projects`. `project_iam` and `projects` are never implied by `all` |
 | `include_service_accounts` | `bool` | `false` | First key for the service-account gate |
 | `protected_service_accounts` | `tuple[str, ...]` | `()` | Account ids/emails prune must never delete |
 | `protected_iam_roles` | `tuple[str, ...]` | `("roles/owner",)` | IAM roles prune must never remove; `roles/owner` is always included |
+| `protected_projects` | `tuple[str, ...]` | `()` | Project ids prune must never delete, on top of the provider/declared/external projects and the credential's own project |
 | `allow_raw_hcl` | `bool` | `false` | Permit pruning when `extra_files` is used (raw HCL is invisible to discovery) |
 
 ```python
@@ -119,6 +120,19 @@ Supported sections and safety rules:
   remaining APIs needs `serviceusage.services.disable`, for example
   `roles/serviceusage.serviceUsageAdmin` (granted by
   `scripts/bootstrap-org-admin.sh`).
+- `projects` — `google_project`; deletes `ACTIVE` projects under the stack's
+  organization (found by walking folders down from the provider project's
+  ancestry) that the stack does not declare. Never implied by `all`: the
+  section must be named. The organization itself is never a candidate, and the
+  provider project, declared/external projects, `protected_projects` and the
+  project that owns the active credential are always exempt. Deletion needs
+  `resourcemanager.projects.delete` (for example
+  `roles/resourcemanager.projectDeleter`); a lien on a project makes the delete
+  fail until it is removed (`roles/resourcemanager.lienModifier`). Projects
+  enter a 30-day soft-delete and `gcloud projects undelete` can restore them.
+  The adopt step only sets `deletion_policy = "DELETE"` and ignores the
+  attributes it cannot reconstruct (billing account, org/folder parent,
+  labels), so pruning never edits a project it is about to delete.
 
 `extra_files` (raw HCL) is invisible to discovery, so a stack that uses it must
 set `allow_raw_hcl=True` before prune will run. Otherwise a bucket declared only

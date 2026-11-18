@@ -249,13 +249,23 @@ python-tofu apply --config infra.py --prune    # apply, then prune leftovers
 `prune` discovers live resources with the service read APIs (Storage, IAM,
 Service Usage) and deletes them through a throw-away OpenTofu root module, so
 deletes use the provider's own logic and never touch the stack's state backend.
-Supported sections are `buckets`, `subscriptions`, `topics`,
-`service_accounts` and `apis`; bucket deletion force-destroys objects.
-`GcpProvider.default_apis` (the control-plane baseline) is never pruned, and
-`service_accounts` needs both `PruneConfig(include_service_accounts=True)` and
-`--allow-service-accounts`; `--all` skips them otherwise. Bucket objects cannot
-be imported by the provider, and project IAM bindings are excluded because an
-authoritative IAM sweep can remove human access.
+Supported sections are `buckets`, `subscriptions`, `topics`, `project_iam`,
+`service_accounts`, `apis` and `projects`; bucket deletion force-destroys
+objects. `GcpProvider.default_apis` (the control-plane baseline) is never
+pruned, and `service_accounts` needs both
+`PruneConfig(include_service_accounts=True)` and `--allow-service-accounts`;
+`--all` skips them otherwise. Bucket objects cannot be imported by the
+provider, and project IAM bindings are excluded because an authoritative IAM
+sweep can remove human access.
+
+`projects` deletes `ACTIVE` projects under the stack's organization that the
+stack does not declare. It is never implied by `all`, and the organization,
+the provider project, declared/external projects, `protected_projects` and the
+project that owns the credential are always exempt. It needs
+`resourcemanager.projects.delete` (for example
+`roles/resourcemanager.projectDeleter`, which `scripts/bootstrap-org-admin.sh`
+grants); deleted projects stay restorable for 30 days with
+`gcloud projects undelete`.
 
 ## Nix integration
 

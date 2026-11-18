@@ -112,8 +112,9 @@ class PruneConfig(TofuModel):
     supports. Service accounts are excluded from ``all`` and require a second,
     explicit gate (``include_service_accounts=True`` plus the CLI's
     ``--allow-service-accounts``) because deleting the identity that runs the
-    tool is irreversible. Providers validate section names against their own
-    list.
+    tool is irreversible. Project deletion is likewise never implied by
+    ``all``; it must be named explicitly. Providers validate section names
+    against their own list.
     """
 
     enabled: bool = False
@@ -141,6 +142,14 @@ class PruneConfig(TofuModel):
             "even when this tuple is empty."
         ),
     )
+    protected_projects: tuple[str, ...] = Field(
+        default_factory=tuple,
+        description=(
+            "Project ids that prune must never delete, on top of the provider "
+            "project, declared and external projects, and the project that owns "
+            "the active credential."
+        ),
+    )
 
     @field_validator("protected_iam_roles")
     @classmethod
@@ -162,6 +171,14 @@ class PruneConfig(TofuModel):
             raise ValueError(
                 "duplicate protected_service_accounts entries: " + ", ".join(duplicates)
             )
+        return cleaned
+
+    @field_validator("protected_projects")
+    @classmethod
+    def _protected_projects_are_clean(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        cleaned = tuple(dict.fromkeys(item.strip() for item in value))
+        if any(not item for item in cleaned):
+            raise ValueError("protected_projects entries must not be empty")
         return cleaned
 
     @field_validator("sections")

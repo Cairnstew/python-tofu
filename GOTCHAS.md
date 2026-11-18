@@ -232,6 +232,34 @@ add `compute`, `run` or similar to `default_apis`/`apis` if other infrastructure
 still needs them. Do not protect every API: the point is to make the stack the
 source of truth for the project's API state.
 
+### Project pruning is explicit-only and always protects the credential project
+`projects` is never implied by `all`, exactly like `project_iam`: deleting a
+project takes every resource in it with it. The sweep resolves the organization
+from the provider project's ancestry and walks folders downward, so projects in
+another organization are never listed. The organization itself is not a
+candidate; the provider project, declared and `external_projects` projects,
+`protected_projects`, and the project that owns the active credential (from the
+key's `client_email` or the impersonation target) are always exempt. Do not
+relax these: the credential project is where the seed account lives, and
+deleting it locks the tool out mid-run.
+
+Deleting needs `resourcemanager.projects.delete` (`roles/resourcemanager.projectDeleter`);
+listing needs `projects.list`/`get`, which `folderAdmin` already provides.
+A project **lien** makes the delete fail until it is removed
+(`roles/resourcemanager.lienModifier`). Deleted projects stay in a 30-day
+soft-delete; `gcloud projects undelete` needs `resourcemanager.projects.undelete`,
+which only the basic `roles/owner` (or a custom role) carries.
+
+### Imported projects default to `deletion_policy = "PREVENT"`
+The Google provider stores `PREVENT` for a project it did not create, so the
+scratch module renders `deletion_policy = "DELETE"` and lets the adopt step
+change that local attribute — otherwise `tofu destroy` refuses. The block also
+ignores `billing_account`, `org_id`, `folder_id`, `labels` and
+`terraform_labels`: prune cannot read the billing association cheaply and must
+never edit a project it is about to delete. Keep that `ignore_changes` list
+intact; removing an entry reintroduces drift writes (and `projects.update`,
+which the seed account does not hold).
+
 ### Only importable resource types can be pruned
 Deletion runs through `tofu import` + `tofu destroy` in a scratch module. The
 Google provider cannot import `google_storage_bucket_object`, so bucket objects
