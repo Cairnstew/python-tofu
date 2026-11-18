@@ -186,7 +186,7 @@ def credential_identities(
             email = getattr(creds, "service_account_email", None)
             if email:
                 identities.add(str(email).lower())
-        except Exception:  # google-auth raises several unrelated types
+        except Exception:  # nosec B110 - google-auth raises several unrelated types; best-effort lookup
             pass
 
     return frozenset(identities)
