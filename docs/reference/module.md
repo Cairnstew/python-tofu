@@ -174,6 +174,35 @@ services.python-tofu.environmentFile = "/run/agenix/python-tofu.env";
 
 Do not put secret values in `settings`; they are world-readable Nix store data.
 
+## Live VM test
+
+The evaluation tests and `module-vm` check (in `flake.nix`) prove the argv and
+unit shape with stubbed binaries. `scripts/live-module-vm.sh` verifies the real
+thing: it builds the NixOS system in `nix/live-vm.nix`, boots it under QEMU and
+lets `python-tofu.service` run an actual `apply` at activation — the same code
+path as `nixos-rebuild switch`.
+
+```bash
+just test-live-module      # build, boot, apply, verify against the cloud
+just clean-live-module     # destroy what the run created
+```
+
+It is **not** a flake check: it needs `/dev/kvm`, outbound network and a real
+credential, and it changes cloud state. It targets only the throwaway project in
+`nix/live-vm-stack.nix` (`pt-live-0361f9`), never the host project.
+
+Two host paths are shared into the guest over 9p:
+
+| Host | Guest | Why |
+|------|-------|-----|
+| `$RUN_DIR/credential` | `/run/agenix` | A 0400 copy of `/run/agenix/gcloud-auth`, removed on exit. The real agenix directory is `drwxr-x--x root:keys`, which QEMU cannot open as a 9p source, and the secret must never enter the Nix store. |
+| `$RUN_DIR/workdir` | `/mnt/workdir` | Keeps the rendered HCL and `terraform.tfstate` after the VM powers off, so `--destroy` can clean up. |
+
+The harness starts from a fresh state every run, resets any resources left
+behind by an earlier failed run, then asserts three things: the unit's
+`Result=success`, `Apply complete` on the serial console, and the bucket,
+service account and IAM binding through the GCP APIs from the host.
+
 ## Home Manager
 
 ```nix

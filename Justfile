@@ -57,6 +57,14 @@ nix-check-build:
 nix-build:
     nix build .#default
 
+# live end-to-end test of the NixOS module (boots a VM, applies real GCP infra)
+test-live-module:
+    ./scripts/live-module-vm.sh
+
+# delete the resources created by test-live-module
+clean-live-module:
+    ./scripts/live-module-vm.sh --destroy
+
 # enter the default dev shell
 nix-shell:
     nix develop

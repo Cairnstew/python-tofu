@@ -136,6 +136,12 @@
             '';
           };
 
+          # The stack JSON for the live VM test, so the host can inspect it or
+          # run `destroy` against the state the VM wrote (shared workdir).
+          live-stack = p.pkgs.writeText "python-tofu-live-vm-stack.json" (
+            mkStackJson { modules = [ ./nix/live-vm-stack.nix ]; }
+          );
+
           # For `--config ./infra.nix` outside a systemd unit. Nix-declared
           # `services.python-tofu.stack` configs are evaluated at build time and
           # do not need this variant.
@@ -297,6 +303,17 @@
       # Alias so a flake input can be imported by its own name. `default` stays
       # for backward compatibility.
       nixosModules.python-tofu = self.nixosModules.default;
+
+      # Live end-to-end test of the module (scripts/live-module-vm.sh). Not a
+      # flake check: it boots a VM, reads /run/agenix and calls the GCP APIs, so
+      # it only runs on demand against the throwaway project.
+      nixosConfigurations.tofu-live = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.default
+          ./nix/live-vm.nix
+        ];
+      };
 
       homeManagerModules.default = { lib, pkgs, ... }: {
         imports = [ ./nix/home-module.nix ];
