@@ -132,7 +132,12 @@ Supported sections and safety rules:
   enter a 30-day soft-delete and `gcloud projects undelete` can restore them.
   The adopt step only sets `deletion_policy = "DELETE"` and ignores the
   attributes it cannot reconstruct (billing account, org/folder parent,
-  labels), so pruning never edits a project it is about to delete.
+  labels), so pruning never edits a project it is about to delete. Only
+  projects carrying the provider's `goog-terraform-provisioned` label are
+  candidates: a project created by hand (console, `gcloud`, another tool) is
+  reported as skipped, and so is one the credential cannot delete, so a missing
+  binding never fails the whole sweep. Remove a hand-made project with
+  `gcloud projects delete`.
 
 `extra_files` (raw HCL) is invisible to discovery, so a stack that uses it must
 set `allow_raw_hcl=True` before prune will run. Otherwise a bucket declared only

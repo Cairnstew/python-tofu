@@ -19,7 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   section must be named. The scratch block sets `deletion_policy = "DELETE"`
   (the provider defaults an imported project to `PREVENT`, which blocks the
   destroy) and ignores billing account, org/folder parent and labels, so the
-  adopt step never edits the project.
+  adopt step never edits the project. Only projects carrying the provider's
+  `goog-terraform-provisioned` label are candidates, and prune asks
+  `testIamPermissions` for `resourcemanager.projects.delete` first: manually
+  created projects and projects the credential cannot delete are reported as
+  skipped instead of failing the sweep.
 - `PruneConfig.protected_projects`: project ids that prune must never delete.
 - `scripts/bootstrap-org-admin.sh` also grants
   `roles/resourcemanager.projectDeleter` (deleting projects) and

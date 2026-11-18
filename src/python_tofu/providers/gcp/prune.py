@@ -11,8 +11,9 @@ Only sections that OpenTofu can import safely are supported:
 - ``topics``           — ``google_pubsub_topic``
 - ``service_accounts`` — ``google_service_account`` (Google-managed defaults skipped)
 - ``apis``             — ``google_project_service`` (essential and dependency APIs protected)
-- ``projects``         — ``google_project`` (the organization, declared/external projects and
-  the project that owns the active credential are never candidates; explicit opt-in only)
+- ``projects``         — ``google_project`` (only projects the provider provisioned; the
+  organization, declared/external projects and the credential's project are never candidates;
+  explicit opt-in only)
 
 Discovery uses the service's own read API (Storage, IAM, Service Usage) rather
 than Cloud Asset Inventory: CAI is eventually consistent, so a bucket deleted a
@@ -78,6 +79,12 @@ _DEFAULT_ACCOUNT_RE = re.compile(r"^(?:\d+|\d+-compute|service-\d+|cloudservices
 
 #: Domain suffix of user-created service accounts; the project id is the prefix.
 _SERVICE_ACCOUNT_SUFFIX = ".iam.gserviceaccount.com"
+
+#: Label the Google provider stamps on resources it provisions.
+ATTRIBUTION_LABEL = "goog-terraform-provisioned"
+
+#: Permission needed to delete a project.
+PROJECT_DELETE_PERMISSION = "resourcemanager.projects.delete"
 
 _STORAGE_CLASSES: dict[str, StorageClass] = {
     "STANDARD": "STANDARD",
@@ -181,6 +188,29 @@ def project_organization(token: str, project: str) -> str | None:
         if resource.get("type") == "organization":
             return str(resource.get("id") or "") or None
     return None
+
+
+def provisioned_by_tofu(data: dict[str, Any]) -> bool:
+    """True when the provider marked the project as Terraform-provisioned.
+
+    The Google provider adds ``goog-terraform-provisioned = "true"`` to resources
+    it creates. A project without it was created by hand (console, gcloud, another
+    tool), so the stack has no mandate to delete it.
+    """
+
+    labels = data.get("labels") or {}
+    return str(labels.get(ATTRIBUTION_LABEL, "")).lower() == "true"
+
+
+def can_delete_project(token: str, project: str) -> bool:
+    """True when the active credential holds ``resourcemanager.projects.delete``."""
+
+    payload = post_json(
+        f"{CRM_BASE}/projects/{project}:testIamPermissions",
+        token,
+        {"permissions": [PROJECT_DELETE_PERMISSION]},
+    )
+    return PROJECT_DELETE_PERMISSION in (payload.get("permissions") or ())
 
 
 def _public_access_prevention(value: Any) -> Literal["inherited", "enforced"]:
@@ -615,9 +645,11 @@ def _project_plan(
 
     The organization comes from the provider project's ancestry and the sweep
     walks folders downward, so a project is only ever planned when it belongs to
-    that organization. Only ``ACTIVE`` projects are candidates: a project that
-    is already pending deletion needs no action, and one that is still being
-    created would race the delete.
+    that organization. Only ``ACTIVE`` projects are candidates, and only ones the
+    Google provider provisioned (``goog-terraform-provisioned`` label): a project
+    created by hand belongs to whoever created it, and prune reports it as
+    skipped instead of deleting it. A project the credential cannot delete is
+    skipped the same way, so one missing binding never fails the whole sweep.
     """
 
     project = stack.provider.project
@@ -645,6 +677,12 @@ def _project_plan(
         state = str(data.get("lifecycleState") or "ACTIVE").upper()
         if state != "ACTIVE":
             skipped.append(f"{project_id}: lifecycle state {state}")
+            continue
+        if not provisioned_by_tofu(data):
+            skipped.append(f"{project_id}: not provisioned by OpenTofu (created manually)")
+            continue
+        if not can_delete_project(token, project_id):
+            skipped.append(f"{project_id}: no {PROJECT_DELETE_PERMISSION} permission")
             continue
         found.append(
             PrunableResource(
@@ -721,8 +759,11 @@ def discover(stack: GcpStack, sections: tuple[str, ...]) -> PrunePlan:
 
 
 __all__ = [
+    "ATTRIBUTION_LABEL",
+    "PROJECT_DELETE_PERMISSION",
     "PROTECTED_APIS",
     "PRUNE_SECTIONS",
+    "can_delete_project",
     "discover",
     "get_project_iam_bindings",
     "list_buckets",
@@ -734,4 +775,5 @@ __all__ = [
     "list_subscriptions",
     "list_topics",
     "project_organization",
+    "provisioned_by_tofu",
 ]

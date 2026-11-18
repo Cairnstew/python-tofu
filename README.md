@@ -261,11 +261,13 @@ sweep can remove human access.
 `projects` deletes `ACTIVE` projects under the stack's organization that the
 stack does not declare. It is never implied by `all`, and the organization,
 the provider project, declared/external projects, `protected_projects` and the
-project that owns the credential are always exempt. It needs
-`resourcemanager.projects.delete` (for example
-`roles/resourcemanager.projectDeleter`, which `scripts/bootstrap-org-admin.sh`
-grants); deleted projects stay restorable for 30 days with
-`gcloud projects undelete`.
+project that owns the credential are always exempt. Only projects the Google
+provider provisioned (the `goog-terraform-provisioned` label) are candidates;
+projects created by hand are reported as skipped, as are projects the
+credential cannot delete. It needs `resourcemanager.projects.delete` (for
+example `roles/resourcemanager.projectDeleter`, which
+`scripts/bootstrap-org-admin.sh` grants); deleted projects stay restorable for
+30 days with `gcloud projects undelete`.
 
 ## Nix integration
 

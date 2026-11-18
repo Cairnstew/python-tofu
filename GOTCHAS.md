@@ -250,6 +250,16 @@ A project **lien** makes the delete fail until it is removed
 soft-delete; `gcloud projects undelete` needs `resourcemanager.projects.undelete`,
 which only the basic `roles/owner` (or a custom role) carries.
 
+Prune only plans projects the Google provider provisioned — the
+`goog-terraform-provisioned = "true"` label. A project created in the console,
+with `gcloud` or by another tool is reported as skipped, never deleted, and
+prune checks `testIamPermissions` for `resourcemanager.projects.delete` before
+planning, so a missing binding degrades to a skip instead of a failed sweep.
+Beware of one masking effect: projects created *through* the seed account carry
+a direct `roles/owner` binding (GCP grants owner to `projectCreator`), so they
+prune successfully even when the org-level `projectDeleter` binding is absent —
+a two-project smoke test passing is not proof the org binding exists.
+
 ### Imported projects default to `deletion_policy = "PREVENT"`
 The Google provider stores `PREVENT` for a project it did not create, so the
 scratch module renders `deletion_policy = "DELETE"` and lets the adopt step

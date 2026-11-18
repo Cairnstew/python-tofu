@@ -25,7 +25,19 @@ LIVE_PROJECTS = [
     {"projectId": "declared-project", "name": "Declared", "lifecycleState": "ACTIVE"},
     {"projectId": "external-project", "name": "External", "lifecycleState": "ACTIVE"},
     {"projectId": "protected-project", "name": "Protected", "lifecycleState": "ACTIVE"},
-    {"projectId": "stray-project", "name": "Stray", "lifecycleState": "ACTIVE"},
+    {
+        "projectId": "stray-project",
+        "name": "Stray",
+        "lifecycleState": "ACTIVE",
+        "labels": {"goog-terraform-provisioned": "true"},
+    },
+    {"projectId": "manual-project", "name": "Manual", "lifecycleState": "ACTIVE"},
+    {
+        "projectId": "denied-project",
+        "name": "Denied",
+        "lifecycleState": "ACTIVE",
+        "labels": {"goog-terraform-provisioned": "true"},
+    },
     {"projectId": "dying-project", "name": "Dying", "lifecycleState": "DELETE_REQUESTED"},
 ]
 
@@ -44,6 +56,11 @@ def inventory(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(gcp_prune, "access_token", lambda stack: "token")
     monkeypatch.setattr(gcp_prune, "project_organization", lambda token, project: ORG)
     monkeypatch.setattr(gcp_prune, "list_org_projects", lambda token, org: list(LIVE_PROJECTS))
+    monkeypatch.setattr(
+        gcp_prune,
+        "can_delete_project",
+        lambda token, project: project != "denied-project",
+    )
     monkeypatch.setattr(
         gcp_prune,
         "credential_identities",
@@ -79,9 +96,67 @@ def test_skipped_projects_report_their_reason(inventory: None) -> None:
         "external-project: protected project",
         "protected-project: protected project",
         "demo-project: protected project",
+        "manual-project: not provisioned by OpenTofu (created manually)",
+        "denied-project: no resourcemanager.projects.delete permission",
         "dying-project: lifecycle state DELETE_REQUESTED",
     ):
         assert expected in plan.skipped
+
+
+def test_manual_projects_are_skipped_not_deleted(inventory: None) -> None:
+    stack = _stack(
+        projects=[GcpProject(project_id="declared-project", name="Declared")],
+        external_projects=["external-project"],
+    )
+
+    plan = gcp_prune.discover(stack, ("projects",))
+
+    assert "manual-project" not in {resource.import_id for resource in plan.resources}
+    assert "manual-project: not provisioned by OpenTofu (created manually)" in plan.skipped
+
+
+def test_projects_without_delete_permission_are_skipped(inventory: None) -> None:
+    stack = _stack(
+        projects=[GcpProject(project_id="declared-project", name="Declared")],
+        external_projects=["external-project"],
+    )
+
+    plan = gcp_prune.discover(stack, ("projects",))
+
+    assert "denied-project" not in {resource.import_id for resource in plan.resources}
+    assert "denied-project: no resourcemanager.projects.delete permission" in plan.skipped
+
+
+def test_provisioned_by_tofu_reads_the_attribution_label() -> None:
+    assert gcp_prune.provisioned_by_tofu({"labels": {"goog-terraform-provisioned": "true"}})
+    assert gcp_prune.provisioned_by_tofu({"labels": {"goog-terraform-provisioned": "True"}})
+    assert not gcp_prune.provisioned_by_tofu({"labels": {}})
+    assert not gcp_prune.provisioned_by_tofu({})
+
+
+def test_can_delete_project_asks_for_the_delete_permission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_post_json(
+        url: str, token: str, payload: dict[str, object], headers: object = None
+    ) -> dict[str, object]:
+        seen.update({"url": url, "payload": payload})
+        return {"permissions": ["resourcemanager.projects.get", "resourcemanager.projects.delete"]}
+
+    monkeypatch.setattr(gcp_prune, "post_json", fake_post_json)
+
+    assert gcp_prune.can_delete_project("token", "manual-project")
+    assert str(seen["url"]).endswith("/projects/manual-project:testIamPermissions")
+    assert seen["payload"] == {"permissions": ["resourcemanager.projects.delete"]}
+
+    monkeypatch.setattr(
+        gcp_prune,
+        "post_json",
+        lambda *args, **kwargs: {"permissions": ["resourcemanager.projects.get"]},
+    )
+    assert not gcp_prune.can_delete_project("token", "manual-project")
 
 
 def test_provider_project_is_protected_without_declarations(inventory: None) -> None:
