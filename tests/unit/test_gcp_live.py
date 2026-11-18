@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ from python_tofu.providers.gcp.live import (
     _normalise_impersonation,
     _region,
     access_token,
+    credential_identities,
     live_measure_usage,
 )
 
@@ -191,6 +193,35 @@ def test_normalise_impersonation() -> None:
     )
     with pytest.raises(LiveUsageError, match="must be a service-account email"):
         _normalise_impersonation("not-an-email")
+
+
+def test_credential_identities_reads_key_and_impersonation(tmp_path: Any) -> None:
+    key = tmp_path / "key.json"
+    key.write_text(
+        json.dumps({"client_email": "org-admin@demo-project.iam.gserviceaccount.com"}),
+        encoding="utf-8",
+    )
+
+    assert credential_identities(
+        str(key), "serviceAccount:provisioner@demo-project.iam.gserviceaccount.com"
+    ) == frozenset(
+        {
+            "org-admin@demo-project.iam.gserviceaccount.com",
+            "provisioner@demo-project.iam.gserviceaccount.com",
+        }
+    )
+
+
+def test_credential_identities_ignores_a_non_email_target(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import google.auth
+
+    def no_adc(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("no ADC in this test")
+
+    monkeypatch.setattr(google.auth, "default", no_adc)
+    assert credential_identities(str(tmp_path / "missing.json"), "not-an-email") == frozenset()
 
 
 def test_provider_live_usage_overrides_stack_estimates(

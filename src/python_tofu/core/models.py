@@ -119,6 +119,34 @@ class PruneConfig(TofuModel):
     enabled: bool = False
     sections: tuple[str, ...] = (ALL_SECTIONS,)
     include_service_accounts: bool = False
+    allow_raw_hcl: bool = Field(
+        default=False,
+        description=(
+            "Allow pruning when the stack also uses `extra_files`. Raw HCL is "
+            "invisible to discovery, so resources declared there look undeclared "
+            "and would be deleted. Off by default."
+        ),
+    )
+    protected_service_accounts: tuple[str, ...] = Field(
+        default_factory=tuple,
+        description=(
+            "Service account ids or emails that prune must never delete, on top "
+            "of the active credential's own identity."
+        ),
+    )
+
+    @field_validator("protected_service_accounts")
+    @classmethod
+    def _protected_accounts_are_clean(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        cleaned = tuple(item.strip() for item in value)
+        if any(not item for item in cleaned):
+            raise ValueError("protected_service_accounts entries must not be empty")
+        duplicates = sorted({item for item in cleaned if cleaned.count(item) > 1})
+        if duplicates:
+            raise ValueError(
+                "duplicate protected_service_accounts entries: " + ", ".join(duplicates)
+            )
+        return cleaned
 
     @field_validator("sections")
     @classmethod
@@ -132,10 +160,20 @@ class PruneConfig(TofuModel):
             raise ValueError("duplicate prune sections: " + ", ".join(duplicates))
         return value
 
-    def resolve(self, supported: tuple[str, ...]) -> tuple[str, ...]:
-        """Return the concrete section names selected by this config."""
+    def resolve(
+        self, supported: tuple[str, ...], explicit_only: tuple[str, ...] = ()
+    ) -> tuple[str, ...]:
+        """Return the concrete section names selected by this config.
 
-        wanted = supported if ALL_SECTIONS in self.sections else self.sections
+        ``explicit_only`` sections are validated but never implied by ``all``;
+        they must be named explicitly. This keeps destructive optional sweeps
+        (project IAM) out of existing ``all`` stacks.
+        """
+
+        if ALL_SECTIONS in self.sections:
+            wanted = tuple(item for item in supported if item not in explicit_only)
+        else:
+            wanted = self.sections
         unknown = sorted(set(wanted) - set(supported))
         if unknown:
             raise ValueError(

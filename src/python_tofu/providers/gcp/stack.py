@@ -193,6 +193,18 @@ class GcpStack(BaseStack):
         return self
 
     @model_validator(mode="after")
+    def _raw_hcl_needs_prune_opt_in(self) -> "GcpStack":
+        # Raw HCL is invisible to discovery, so a resource declared only in
+        # extra_files would look undeclared and be pruned.
+        if self.prune.enabled and self.extra_files and not self.prune.allow_raw_hcl:
+            raise ValueError(
+                "prune is enabled but the stack also uses extra_files: raw HCL "
+                "resources are invisible to discovery and would be deleted. "
+                "Remove them, or set prune.allow_raw_hcl=True to accept the risk."
+            )
+        return self
+
+    @model_validator(mode="after")
     def _references_are_known(self) -> "GcpStack":
         known = {self.provider.project, *self.external_projects}
         known.update(project.project_id for project in self.projects)

@@ -33,6 +33,7 @@ class Provider:
     measure_usage: Callable[[Any], Usage] | None = None
     live_measure_usage: Callable[[Any], Usage] | None = None
     prune_sections: tuple[str, ...] = ()
+    prune_explicit_only: tuple[str, ...] = ()
     prune_plan: Callable[[Any, tuple[str, ...]], PrunePlan] | None = None
     doctor_checks: Callable[[Any, Path], Sequence[CheckResult]] | None = None
 

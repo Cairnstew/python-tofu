@@ -148,7 +148,7 @@ class BaseCommand:
                 enabled=True,
                 sections=chosen,
                 include_service_accounts=True,
-            ).resolve(provider.prune_sections)
+            ).resolve(provider.prune_sections, provider.prune_explicit_only)
         except ValueError as exc:
             self.abort(str(exc))
 

@@ -88,7 +88,8 @@ PruneSectionOption = Annotated[
         "--section",
         help=(
             "Restrict pruning to a section (repeatable): buckets, subscriptions, "
-            "topics, service_accounts or apis. Implies --prune."
+            "topics, project_iam, service_accounts or apis. Implies --prune. "
+            "project_iam is never implied by --all."
         ),
     ),
 ]

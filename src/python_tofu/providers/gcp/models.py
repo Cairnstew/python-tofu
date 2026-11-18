@@ -34,7 +34,14 @@ from python_tofu.providers.gcp.quirks import (
 from python_tofu.providers.gcp.service_names import DEFAULT_APIS
 
 #: Sections the GCP provider can discover and destroy (in safe deletion order).
-GCP_PRUNE_SECTIONS = ("buckets", "subscriptions", "topics", "service_accounts", "apis")
+GCP_PRUNE_SECTIONS = (
+    "buckets",
+    "subscriptions",
+    "topics",
+    "project_iam",
+    "service_accounts",
+    "apis",
+)
 
 StorageClass = Literal[
     "STANDARD",

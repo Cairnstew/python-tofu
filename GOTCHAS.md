@@ -187,6 +187,29 @@ state encryption or a restricted GCS backend is in place). Prefer
 impersonation; encrypt any key you do materialise into the gitignored
 `.cache/gcp-keys/`.
 
+### Prune cannot see extra_files
+Discovery only compares the typed stack, so a bucket/topic/API declared only in
+`extra_files` looks undeclared and would be deleted. `GcpStack` rejects
+`prune.enabled` with `extra_files`, and `discover` refuses the CLI `--prune`
+path too. Set `PruneConfig(allow_raw_hcl=True)` only when you accept that raw
+HCL resources are not protected.
+
+### project_iam is managed-principal-only and never automatic
+`project_iam` prunes only `google_project_iam_member` bindings whose member is a
+`serviceAccount:` declared in the stack. It reports and skips `user:`, `group:`,
+`domain:`, `allUsers`, `allAuthenticatedUsers`, conditional bindings,
+`roles/owner`, the active credential and any service account the stack does not
+declare. It is never implied by `all`; name it explicitly. `apply --prune`
+always drops the section (IAM is eventually consistent); use the standalone
+`python-tofu prune` command.
+
+### The active credential is always protected
+`prune` reads `client_email` from `provider.credentials` /
+`GOOGLE_APPLICATION_CREDENTIALS` and adds the `impersonate_service_account`
+target, then skips those identities regardless of `include_service_accounts`
+and `--allow-service-accounts`. `protected_service_accounts` adds ids/emails.
+Do not remove this guard: the admin key is the identity running the prune.
+
 ## Pruning
 
 ### Pruning is opt-in and irreversible
