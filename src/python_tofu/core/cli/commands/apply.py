@@ -79,6 +79,17 @@ def create_app(provider: Provider) -> typer.Typer:
                 prune_section,
                 allow_service_accounts=allow_service_accounts,
             )
+            if "project_iam" in sections:
+                # IAM is eventually consistent: a binding created by this apply
+                # can still be missing from getIamPolicy moments later. Sweeping
+                # it automatically would race the apply itself.
+                sections = tuple(item for item in sections if item != "project_iam")
+                typer.secho(
+                    "Note: project_iam is never pruned by apply --prune; run "
+                    "`python-tofu prune --config ... --apply` explicitly.",
+                    fg=typer.colors.YELLOW,
+                    err=True,
+                )
             command.run_tofu("init")
         else:
             if prune or prune_section:

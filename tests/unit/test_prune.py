@@ -14,6 +14,7 @@ from python_tofu.providers.gcp.models import (
     GCP_PRUNE_SECTIONS,
     GcpProject,
     ProjectApi,
+    ProjectIamMember,
     ServiceAccount,
     StorageBucket,
 )
@@ -52,6 +53,37 @@ APIS = [
     {"name": "projects/123/services/bigquery.googleapis.com", "state": "DISABLED"},
 ]
 
+IAM_POLICY = [
+    {
+        "role": "roles/storage.objectViewer",
+        "members": ["serviceAccount:ci-runner@demo-project.iam.gserviceaccount.com"],
+    },
+    {
+        "role": "roles/viewer",
+        "members": [
+            "serviceAccount:ci-runner@demo-project.iam.gserviceaccount.com",
+            "user:alice@example.com",
+            "group:devs@example.com",
+            "domain:example.com",
+            "allUsers",
+            "allAuthenticatedUsers",
+        ],
+    },
+    {
+        "role": "roles/owner",
+        "members": ["serviceAccount:ci-runner@demo-project.iam.gserviceaccount.com"],
+    },
+    {
+        "role": "roles/editor",
+        "members": ["serviceAccount:ci-runner@demo-project.iam.gserviceaccount.com"],
+        "condition": {"title": "temporary"},
+    },
+    {
+        "role": "roles/viewer",
+        "members": ["serviceAccount:manual@demo-project.iam.gserviceaccount.com"],
+    },
+]
+
 
 def _stack(**overrides: object) -> GcpStack:
     values: dict[str, object] = {
@@ -78,12 +110,27 @@ def inventory(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(gcp_prune, "list_services", lambda project, token: APIS)
     monkeypatch.setattr(gcp_prune, "list_topics", lambda project, token: [])
     monkeypatch.setattr(gcp_prune, "list_subscriptions", lambda project, token: [])
+    monkeypatch.setattr(gcp_prune, "get_project_iam_bindings", lambda project, token: [])
+    monkeypatch.setattr(gcp_prune, "credential_identities", lambda *args, **kwargs: frozenset())
 
 
 # ── config ────────────────────────────────────────────────────────────
 def test_prune_is_off_by_default() -> None:
     assert _stack().prune.enabled is False
-    assert _stack().prune.resolve(GCP_PRUNE_SECTIONS) == GCP_PRUNE_SECTIONS
+    assert _stack().prune.resolve(GCP_PRUNE_SECTIONS, ("project_iam",)) == tuple(
+        section for section in GCP_PRUNE_SECTIONS if section != "project_iam"
+    )
+
+
+def test_project_iam_is_explicit_only() -> None:
+    implicit = PruneConfig(enabled=True).resolve(GCP_PRUNE_SECTIONS, ("project_iam",))
+    explicit = PruneConfig(enabled=True, sections=("project_iam",)).resolve(
+        GCP_PRUNE_SECTIONS, ("project_iam",)
+    )
+
+    assert "project_iam" not in implicit
+    assert explicit == ("project_iam",)
+    assert GCP.prune_explicit_only == ("project_iam",)
 
 
 def test_prune_sections_resolve_in_provider_order() -> None:
@@ -107,6 +154,28 @@ def test_all_cannot_be_mixed_with_other_sections() -> None:
         PruneConfig(sections=("all", "buckets"))
 
 
+def test_prune_with_extra_files_requires_opt_in() -> None:
+    raw = {"raw.tf": 'resource "google_storage_bucket" "raw" { name = "raw" }'}
+    with pytest.raises(ValidationError, match="extra_files"):
+        _stack(prune=PruneConfig(enabled=True), extra_files=raw)
+
+
+def test_discover_refuses_extra_files_without_opt_in() -> None:
+    raw = {"raw.tf": 'resource "google_storage_bucket" "raw" { name = "raw" }'}
+    with pytest.raises(PruneError, match="extra_files"):
+        discover(_stack(extra_files=raw), ("buckets",))
+
+
+def test_allow_raw_hcl_warns_on_discovery(inventory: None) -> None:
+    raw = {"raw.tf": 'resource "google_storage_bucket" "raw" { name = "raw" }'}
+    stack = _stack(
+        extra_files=raw,
+        prune=PruneConfig(enabled=True, allow_raw_hcl=True),
+    )
+    plan = discover(stack, ("buckets",))
+    assert any("extra_files" in warning for warning in plan.warnings)
+
+
 # ── discovery ─────────────────────────────────────────────────────────
 def test_discovery_prunes_only_undeclared_resources(inventory: None) -> None:
     plan = discover(_stack(prune=PruneConfig(enabled=True)), GCP_PRUNE_SECTIONS)
@@ -116,6 +185,53 @@ def test_discovery_prunes_only_undeclared_resources(inventory: None) -> None:
         "bucket stray-bucket",
         "service account manual@demo-project.iam.gserviceaccount.com",
         "API pubsub.googleapis.com",
+    ]
+
+
+def test_active_identity_is_never_pruned(inventory: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    admin = "org-admin@demo-project.iam.gserviceaccount.com"
+    monkeypatch.setattr(
+        gcp_prune, "credential_identities", lambda *args, **kwargs: frozenset({admin})
+    )
+    monkeypatch.setattr(
+        gcp_prune,
+        "list_service_accounts",
+        lambda project, token: [
+            {"email": admin},
+            {"email": "manual@demo-project.iam.gserviceaccount.com"},
+        ],
+    )
+
+    plan = discover(_stack(), ("service_accounts",))
+
+    assert [resource.description for resource in plan.resources] == [
+        "service account manual@demo-project.iam.gserviceaccount.com"
+    ]
+
+
+def test_protected_service_accounts_accept_ids_and_emails(
+    inventory: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stack = _stack(
+        prune=PruneConfig(
+            enabled=True,
+            protected_service_accounts=("manual", "other@demo-project.iam.gserviceaccount.com"),
+        )
+    )
+    monkeypatch.setattr(
+        gcp_prune,
+        "list_service_accounts",
+        lambda project, token: [
+            {"email": "manual@demo-project.iam.gserviceaccount.com"},
+            {"email": "other@demo-project.iam.gserviceaccount.com"},
+            {"email": "stray-account@demo-project.iam.gserviceaccount.com"},
+        ],
+    )
+
+    plan = discover(stack, ("service_accounts",))
+
+    assert [resource.description for resource in plan.resources] == [
+        "service account stray-account@demo-project.iam.gserviceaccount.com"
     ]
 
 
@@ -137,6 +253,141 @@ def test_discovery_skips_protected_apis_inventory(inventory: None) -> None:
     assert "API cloudbilling.googleapis.com" not in services
     assert "API storage.googleapis.com" not in services
     assert "API bigquery.googleapis.com" not in services
+
+
+def _iam_stack(**overrides: object) -> GcpStack:
+    values: dict[str, object] = {
+        "service_accounts": [
+            ServiceAccount(
+                project="demo-project",
+                account_id="ci-runner",
+                roles=["roles/storage.objectViewer"],
+            )
+        ],
+    }
+    values.update(overrides)
+    return _stack(**values)
+
+
+def test_project_iam_prunes_only_managed_undeclared_bindings(
+    inventory: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gcp_prune, "get_project_iam_bindings", lambda project, token: IAM_POLICY)
+
+    plan = discover(_iam_stack(), ("project_iam",))
+
+    assert [resource.description for resource in plan.resources] == [
+        "IAM binding roles/viewer for serviceAccount:ci-runner@demo-project.iam.gserviceaccount.com"
+    ]
+    assert any("project_iam: skipped bindings" in warning for warning in plan.warnings)
+
+
+def test_project_iam_import_id_and_address(
+    inventory: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gcp_prune, "get_project_iam_bindings", lambda project, token: IAM_POLICY)
+
+    (binding,) = discover(_iam_stack(), ("project_iam",)).resources
+
+    assert binding.import_id == (
+        "demo-project roles/viewer serviceAccount:ci-runner@demo-project.iam.gserviceaccount.com"
+    )
+    assert binding.address.startswith("google_project_iam_member.prune_iam_roles_viewer_")
+
+
+def test_project_iam_treats_a_declared_service_account_binding_as_declared(
+    inventory: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        gcp_prune,
+        "get_project_iam_bindings",
+        lambda project, token: [
+            {
+                "role": "roles/viewer",
+                "members": ["serviceAccount:ci-runner@demo-project.iam.gserviceaccount.com"],
+            }
+        ],
+    )
+    stack = _iam_stack(
+        iam_members=[
+            ProjectIamMember(
+                project="demo-project",
+                role="roles/viewer",
+                service_account="ci-runner",
+            )
+        ]
+    )
+
+    assert discover(stack, ("project_iam",)).resources == ()
+
+
+def test_project_iam_never_prunes_the_active_identity(
+    inventory: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    admin = "org-admin@demo-project.iam.gserviceaccount.com"
+    monkeypatch.setattr(
+        gcp_prune, "credential_identities", lambda *args, **kwargs: frozenset({admin})
+    )
+    monkeypatch.setattr(
+        gcp_prune,
+        "get_project_iam_bindings",
+        lambda project, token: [{"role": "roles/viewer", "members": [f"serviceAccount:{admin}"]}],
+    )
+    stack = _iam_stack(
+        service_accounts=[
+            ServiceAccount(
+                project="demo-project",
+                account_id="ci-runner",
+                roles=["roles/storage.objectViewer"],
+            ),
+            ServiceAccount(project="demo-project", account_id="org-admin"),
+        ]
+    )
+
+    assert discover(stack, ("project_iam",)).resources == ()
+
+
+def test_project_iam_skips_conditional_and_owner_bindings(
+    inventory: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        gcp_prune,
+        "get_project_iam_bindings",
+        lambda project, token: [
+            {
+                "role": "roles/viewer",
+                "members": ["serviceAccount:ci-runner@demo-project.iam.gserviceaccount.com"],
+                "condition": {"title": "temporary"},
+            },
+            {
+                "role": "roles/owner",
+                "members": ["serviceAccount:ci-runner@demo-project.iam.gserviceaccount.com"],
+            },
+        ],
+    )
+
+    plan = discover(_iam_stack(), ("project_iam",))
+
+    assert plan.resources == ()
+    assert any("conditional=" in warning for warning in plan.warnings)
+    assert any("protected-role=" in warning for warning in plan.warnings)
+
+
+def test_get_project_iam_bindings_requests_policy_version_three(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(url: str, token: str, payload: dict[str, object]) -> dict[str, object]:
+        calls.append((url, payload))
+        return {"bindings": [{"role": "roles/viewer", "members": ["user:a@example.com"]}]}
+
+    monkeypatch.setattr(gcp_prune, "post_json", fake_post)
+    bindings = gcp_prune.get_project_iam_bindings("demo-project", "token")
+
+    assert bindings == [{"role": "roles/viewer", "members": ["user:a@example.com"]}]
+    assert calls[0][0].endswith("/projects/demo-project:getIamPolicy")
+    assert calls[0][1] == {"options": {"requestedPolicyVersion": 3}}
 
 
 def test_bucket_listing_follows_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -235,12 +486,19 @@ def test_reaper_keeps_scratch_on_failure(tmp_path: Path, inventory: None) -> Non
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
-def _write_config(tmp_path: Path, enabled: bool, include_service_accounts: bool = False) -> Path:
+def _write_config(
+    tmp_path: Path,
+    enabled: bool,
+    include_service_accounts: bool = False,
+    sections: tuple[str, ...] | None = None,
+) -> Path:
     options: list[str] = []
     if enabled:
         options.append("enabled=True")
     if include_service_accounts:
         options.append("include_service_accounts=True")
+    if sections is not None:
+        options.append(f"sections={sections!r}")
     prune = f"prune=PruneConfig({', '.join(options)})," if options else ""
     path = tmp_path / "infra.py"
     path.write_text(
@@ -423,6 +681,45 @@ def test_cli_prune_all_skips_service_accounts_without_run_gate(
     )
     assert allowed.exit_code == 0, _combined(allowed)
     assert "Prune plan: 3 undeclared resource(s)" in allowed.output
+
+
+def test_cli_apply_prune_never_runs_project_iam(
+    runner: CliRunner,
+    cli: object,
+    tmp_path: Path,
+    inventory: None,
+    fake_tofu: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _write_config(tmp_path, enabled=True, sections=("project_iam",))
+    monkeypatch.setattr(
+        gcp_prune,
+        "get_project_iam_bindings",
+        lambda project, token: [
+            {
+                "role": "roles/viewer",
+                "members": ["serviceAccount:ci-runner@demo-project.iam.gserviceaccount.com"],
+            }
+        ],
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "apply",
+            "--config",
+            str(config),
+            "--workdir",
+            str(tmp_path / "tofu"),
+            "--binary",
+            str(fake_tofu),
+            "--auto-approve",
+        ],
+    )
+
+    assert result.exit_code == 0, _combined(result)
+    assert "never pruned by apply --prune" in _combined(result)
+    assert "Pruned" not in result.output
 
 
 def test_cli_apply_prune_with_plan_file_fails(

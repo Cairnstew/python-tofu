@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `google_service_account_iam_member` binding for delegation —
   `roles/iam.serviceAccountTokenCreator` (impersonation) or
   `roles/iam.serviceAccountUser` (actAs) on one specific account.
+- `PruneConfig.protected_service_accounts` and automatic protection of the
+  active credential's service-account identity (the key's `client_email` plus
+  any `impersonate_service_account` target). The guard applies regardless of
+  `include_service_accounts` / `--allow-service-accounts`.
+- `project_iam` prune section: managed-principal-only project IAM bindings.
+  It skips human/group/domain/allUsers members, conditional bindings,
+  `roles/owner`, the active identity and service accounts the stack does not
+  declare. `apply --prune` always skips it (IAM is eventually consistent); use
+  `python-tofu prune` explicitly.
+- `PruneConfig.allow_raw_hcl`: explicit opt-in for pruning a stack that also
+  uses `extra_files`. Without it, prune refuses to run because raw HCL
+  resources are invisible to discovery.
 - `ProjectIamMember.service_account`: set a declared account id or email instead
   of a prefixed `member`; it renders as
   `serviceAccount:${google_service_account.sa_x.email}` so the grant waits for

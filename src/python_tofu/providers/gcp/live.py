@@ -131,6 +131,67 @@ def access_token_for(
     return str(token)
 
 
+def _identity_email(value: str | None) -> str | None:
+    """Return a service-account email from an email or ``serviceAccount:`` form."""
+
+    if not value:
+        return None
+    candidate = value.strip()
+    prefix = "serviceAccount:"
+    if candidate.startswith(prefix):
+        candidate = candidate[len(prefix) :]
+    return candidate.lower() if "@" in candidate else None
+
+
+def _key_email(credentials_path: str | None) -> str | None:
+    """Read ``client_email`` from a service-account JSON key without a token call."""
+
+    if not credentials_path:
+        return None
+    try:
+        with open(os.path.expanduser(credentials_path), encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError, TypeError):
+        return None
+    email = payload.get("client_email") if isinstance(payload, dict) else None
+    return str(email).lower() if email else None
+
+
+def credential_identities(
+    credentials_path: str | None = None,
+    impersonate_service_account: str | None = None,
+) -> frozenset[str]:
+    """Service-account emails the active credential represents.
+
+    This is deliberately best-effort and local: a key file gives an exact
+    ``client_email``, impersonation gives the target, and ADC service accounts
+    expose ``service_account_email``. Prune uses it to protect the identity that
+    runs the tool, so a missing value must never become a false "safe to delete".
+    """
+
+    identities: set[str] = set()
+    target = _identity_email(impersonate_service_account)
+    if target is not None:
+        identities.add(target)
+
+    key_email = _key_email(credentials_path or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"))
+    if key_email is not None:
+        identities.add(key_email)
+
+    if not identities:
+        try:
+            import google.auth
+
+            creds, _ = google.auth.default()
+            email = getattr(creds, "service_account_email", None)
+            if email:
+                identities.add(str(email).lower())
+        except Exception:  # google-auth raises several unrelated types
+            pass
+
+    return frozenset(identities)
+
+
 def access_token(stack: GcpStack) -> str:
     """Return an OAuth token for the stack's credentials (ADC fallback)."""
 
@@ -154,6 +215,39 @@ def get_json(
     if scheme not in ("https", "http"):
         raise GoogleApiError(f"refusing to call a non-HTTP URL: {url}")
     request = urllib.request.Request(f"{url}?{query}", headers=merged)
+    try:
+        # The scheme is restricted to http(s) immediately above.
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
+            return json.load(response)  # type: ignore[no-any-return]
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:300]
+        raise GoogleApiError(
+            f"Google API returned {exc.code} for {url}: {detail}", status=exc.code
+        ) from None
+    except urllib.error.URLError as exc:
+        raise GoogleApiError(f"could not reach Google API {url}: {exc.reason}") from None
+
+
+def post_json(
+    url: str,
+    token: str,
+    payload: dict[str, Any],
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """POST a JSON body and decode the JSON response (read-only APIs that need a body)."""
+
+    merged = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    if headers:
+        merged.update(headers)
+    scheme = urllib.parse.urlparse(url).scheme
+    if scheme not in ("https", "http"):
+        raise GoogleApiError(f"refusing to call a non-HTTP URL: {url}")
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(url, data=body, method="POST", headers=merged)
     try:
         # The scheme is restricted to http(s) immediately above.
         with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
@@ -255,7 +349,9 @@ __all__ = [
     "LiveUsageError",
     "access_token",
     "access_token_for",
+    "credential_identities",
     "get_json",
     "list_assets",
     "live_measure_usage",
+    "post_json",
 ]

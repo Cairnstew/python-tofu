@@ -68,7 +68,10 @@ passed.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | `bool` | `false` | Turn pruning on for the selected sections |
-| `sections` | `tuple[str, ...]` | `("all",)` | `all`, or any of `buckets`, `subscriptions`, `topics`, `service_accounts`, `apis` |
+| `sections` | `tuple[str, ...]` | `("all",)` | `all`, or any of `buckets`, `subscriptions`, `topics`, `project_iam`, `service_accounts`, `apis`. `project_iam` is never implied by `all` |
+| `include_service_accounts` | `bool` | `false` | First key for the service-account gate |
+| `protected_service_accounts` | `tuple[str, ...]` | `()` | Account ids/emails prune must never delete |
+| `allow_raw_hcl` | `bool` | `false` | Permit pruning when `extra_files` is used (raw HCL is invisible to discovery) |
 
 ```python
 from python_tofu import GcpStack, PruneConfig
@@ -98,10 +101,22 @@ Supported sections and safety rules:
   topic cannot be deleted while subscriptions reference it.
 - `topics` — `google_pubsub_topic`.
 - `service_accounts` — `google_service_account`; Google-managed accounts
-  (compute/appspot/agent defaults) are skipped.
+  (compute/appspot/agent defaults) are skipped. The active credential's own
+  identity and `protected_service_accounts` are always skipped, even with the
+  two-key gate.
+- `project_iam` — `google_project_iam_member`; only bindings whose member is a
+  `serviceAccount:` declared in this stack are considered. Conditional bindings,
+  `user:`/`group:`/`domain:`/`allUsers`, `roles/owner` and the active identity
+  are reported and left alone. It is never implied by `all` and is only run by
+  `python-tofu prune`; `apply --prune` always skips it because IAM is
+  eventually consistent.
 - `apis` — `google_project_service`; essential APIs (Cloud Asset Inventory,
   IAM, Cloud Resource Manager, Service Usage, Storage, logging, monitoring,
   billing budgets) are never disabled.
+
+`extra_files` (raw HCL) is invisible to discovery, so a stack that uses it must
+set `allow_raw_hcl=True` before prune will run. Otherwise a bucket declared only
+in raw HCL would be deleted as undeclared.
 
 Bucket objects cannot be imported by the Google provider, and project IAM
 bindings are excluded on purpose: an authoritative IAM sweep can remove human
