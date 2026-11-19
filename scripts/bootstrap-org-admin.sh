@@ -16,9 +16,11 @@
 #   - roles/resourcemanager.organizationAdmin   (to grant org roles)
 #   - roles/orgpolicy.policyAdmin               (only for --override-key-policy)
 # and on the billing account:
-#   - roles/billing.admin                       (to link billing + grant billing.user)
+#   - roles/billing.admin                       (to link billing and grant the
+#                                                billing.user + costsManager roles)
 # and on the project:
-#   - roles/owner (or enough to enable APIs and create service accounts)
+#   - roles/owner (or enough to enable APIs, create service accounts, and grant
+#                  project IAM — the seed gets storage.admin here)
 #
 # Usage:
 #   ./scripts/bootstrap-org-admin.sh PROJECT_ID [options]
@@ -77,6 +79,28 @@ ORG_ROLES=(
   roles/iam.serviceAccountKeyAdmin      # manage SA keys (if you allow them)
   roles/serviceusage.serviceUsageAdmin  # enable/disable APIs (apply + prune)
   roles/resourcemanager.projectDeleter  # delete projects (prune projects section)
+)
+
+# Roles granted on the HOST PROJECT — the project the seed SA lives in and the
+# default quota project for the wrapper's own API calls.
+PROJECT_ROLES=(
+  # Quota project for API calls.
+  roles/serviceusage.serviceUsageConsumer
+  # GCS state backend (`backend = { kind = "gcs"; bucket = ...; }`), the
+  # `buckets`/`bucket_objects` sections, and reading their state objects.
+  # Required before the first `init` against a gcs backend: that init runs
+  # before any apply, so the stack cannot grant this to itself in time.
+  roles/storage.admin
+)
+
+# Roles granted on the BILLING ACCOUNT.
+BILLING_ROLES=(
+  # Link/unlink projects and read billing metadata.
+  roles/billing.user
+  # `google_billing_budget` (billing.budgets.create/update/delete).
+  # `billing.user` carries no `billing.budgets.*` permission at all, so a
+  # stack with a budget 403s until this is added.
+  roles/billing.costsManager
 )
 
 # APIs enabled on the host project.
@@ -348,23 +372,28 @@ for role in "${ORG_ROLES[@]}"; do
   ok "  $role"
 done
 
-# Lets the SA use APIs with its host project as the quota project.
-log "Granting serviceUsageConsumer on host project..."
-retry 3 5 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/serviceusage.serviceUsageConsumer" \
-  --condition=None --quiet >/dev/null \
-  || die "Failed to grant serviceUsageConsumer on $PROJECT_ID"
-ok "  roles/serviceusage.serviceUsageConsumer (project)"
+# Project-scoped roles: quota project for API calls, plus storage so the GCS
+# state backend and every bucket resource work without a later manual grant.
+log "Granting project roles on $PROJECT_ID..."
+for role in "${PROJECT_ROLES[@]}"; do
+  retry 3 5 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="$role" \
+    --condition=None --quiet >/dev/null \
+    || die "Failed to grant $role on $PROJECT_ID (do you have owner or project IAM admin?)"
+  ok "  $role (project)"
+done
 
 # ---------- 5. billing account permissions ----------
 log "Granting billing permissions on billing account $BILLING_ID..."
-gcloud billing accounts add-iam-policy-binding "$BILLING_ID" \
-  --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/billing.user" \
-  --quiet >/dev/null \
-  || die "Failed to grant billing.user (you need billing.admin on $BILLING_ID)"
-ok "  roles/billing.user (billing account)"
+for role in "${BILLING_ROLES[@]}"; do
+  gcloud billing accounts add-iam-policy-binding "$BILLING_ID" \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="$role" \
+    --quiet >/dev/null \
+    || die "Failed to grant $role (you need billing.admin on $BILLING_ID)"
+  ok "  $role (billing account)"
+done
 
 # ---------- 6. optional: let a human impersonate the SA ----------
 if [[ -n $IMPERSONATOR ]]; then
@@ -446,6 +475,8 @@ Service account : $SA_EMAIL
 Organization    : $ORG_ID
 Billing account : $BILLING_ID
 Org roles       : ${ORG_ROLES[*]}
+Project roles   : ${PROJECT_ROLES[*]} ($PROJECT_ID)
+Billing roles   : ${BILLING_ROLES[*]} ($BILLING_ID)
 EOF
 
 if [[ $CREATE_KEY == true ]]; then

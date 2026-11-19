@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   created projects and projects the credential cannot delete are reported as
   skipped instead of failing the sweep.
 - `PruneConfig.protected_projects`: project ids that prune must never delete.
+- `scripts/bootstrap-org-admin.sh` also grants `roles/storage.admin` on the host
+  project and `roles/billing.costsManager` on the billing account. Without the
+  first, a stack using the GCS state backend fails during `init` — which runs
+  before any `apply`, so the stack cannot grant it to itself in time; without
+  the second, a `billing_budgets` section 403s, because `roles/billing.user`
+  carries no `billing.budgets.*` permission. Re-run with `--no-key` to add both
+  bindings to an existing seed account.
 - `scripts/bootstrap-org-admin.sh` also grants
   `roles/resourcemanager.projectDeleter` (deleting projects) and
   `roles/serviceusage.serviceUsageAdmin` (enabling/disabling APIs) at the

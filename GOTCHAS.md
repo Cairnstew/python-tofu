@@ -485,7 +485,13 @@ plan output.
 created by `scripts/bootstrap-org-admin.sh`. It holds `projectCreator`,
 `folderAdmin`, `securityAdmin`, `serviceAccountAdmin`, `serviceAccountKeyAdmin`,
 `orgpolicy.policyAdmin` and `serviceUsageAdmin` on organization `595961694991`
-(project `nixos-infra-496517`), plus `billing.user` on the billing account.
+(project `nixos-infra-496517`), plus `storage.admin` on that project and
+`billing.user` + `billing.costsManager` on the billing account. The split
+matters: project IAM is inherited from the org bindings, so the seed can grant
+itself project roles (`setIamPolicy`), but billing-account IAM is not — only
+`billing.admin` carries `billing.accounts.setIamPolicy`, so the billing roles
+must be granted by a human once. `costsManager` is what allows
+`google_billing_budget`; `billing.user` alone returns `403 PERMISSION_DENIED`.
 `serviceUsageAdmin` is what allows disabling APIs (`prune` of the `apis`
 section, `disable_on_destroy`); an account created before a role was added to
 the script needs the binding re-applied — re-run the script with `--no-key`,
