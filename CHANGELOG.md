@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   created projects and projects the credential cannot delete are reported as
   skipped instead of failing the sweep.
 - `PruneConfig.protected_projects`: project ids that prune must never delete.
+- `QuotaOverride` and the `quota_overrides` stack section: Service Usage
+  consumer quota overrides, the only GCP ceiling the cloud enforces itself (a
+  `BillingBudget` only sends alerts). New `quota` command, a dry run by default
+  and `--apply` to write, reconciling through the Service Usage API because the
+  `google_service_usage_consumer_quota_override` resource is beta-only and the
+  Nix build mirrors only `hashicorp/google`. Only declared overrides are
+  touched; undeclared live overrides are reported, never deleted.
 - `scripts/bootstrap-org-admin.sh` also grants `roles/storage.admin` on the host
   project and `roles/billing.costsManager` on the billing account. Without the
   first, a stack using the GCS state backend fails during `init` — which runs

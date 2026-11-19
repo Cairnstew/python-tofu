@@ -227,6 +227,42 @@ standalone `prune` command for IAM. An `extra_files` stack needs
 the stack's own `prune.enabled` setting, so `plan --destroy` works on a
 prune-enabled stack without `--no-prune`.
 
+### `quota`
+
+Apply the stack's `quota_overrides`: Service Usage **consumer quota overrides**.
+These are the only GCP ceiling the cloud enforces on its own — a billing budget
+only sends alerts, while an override makes the API refuse more of a resource
+once the limit is reached.
+
+There is no `hashicorp/google` resource for this (the provider's
+`google_service_usage_consumer_quota_override` is beta-only), so the command
+calls the Service Usage API directly instead of rendering HCL. The mirrored
+provider and the offline `tofu init` are unchanged.
+
+Discovery is read-only, so the command is a **dry run by default**. It creates
+or updates only the overrides the stack declares; an override that exists in the
+project without a declaration is reported as a warning, never deleted.
+
+```bash
+python-tofu quota --config infra.py            # show what would change
+python-tofu quota --config infra.py --apply    # create or update
+```
+
+| Option | Description |
+|--------|-------------|
+| `--apply` | Actually create or update the overrides |
+| `--auto-approve` | Skip the confirmation prompt |
+
+To find the metric and limit ids for a service:
+
+```bash
+gcloud alpha services quota list --service=compute.googleapis.com \
+  --consumer=projects/<project>
+```
+
+`limit` is the dimension path from the limit's resource name (`/project`,
+`/project/region`, `/project/zone`), not the quota id.
+
 ### `output`
 
 Run `tofu output -json` (or `--no-json` for plain output). Reads the values

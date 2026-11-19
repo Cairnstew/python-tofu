@@ -27,6 +27,7 @@ from python_tofu.providers.gcp.models import (
     ProjectIamMember,
     PubSubSubscription,
     PubSubTopic,
+    QuotaOverride,
     ServiceAccount,
     ServiceAccountIamMember,
     StorageBucket,
@@ -94,6 +95,14 @@ class GcpStack(BaseStack):
     artifact_registry_repositories: list[ArtifactRegistryRepository] = Field(default_factory=list)
     backend: GcpBackendConfig | None = None
     billing_budgets: list[BillingBudget] = Field(default_factory=list)
+    quota_overrides: list[QuotaOverride] = Field(
+        default_factory=list,
+        description=(
+            "Service Usage consumer quota overrides: ceilings the cloud enforces. "
+            "Applied by the `quota` command (the OpenTofu resource is beta-only), "
+            "not rendered as HCL."
+        ),
+    )
     profile: StackProfile = Field(
         default=StackProfile.DEFAULT,
         description=(
@@ -221,6 +230,7 @@ class GcpStack(BaseStack):
             *[item.project for item in self.artifact_registry_repositories],
             *[item.project for item in self.pubsub_topics],
             *[item.project for item in self.pubsub_subscriptions],
+            *[item.project for item in self.quota_overrides],
         }
         # A "${...}" value is resolved by OpenTofu, not against the declared
         # set; it is not a literal project id and must not fail this check.

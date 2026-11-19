@@ -17,6 +17,7 @@ from python_tofu.core.exceptions import TofuError
 from python_tofu.core.limits import LimitPolicy, Throttler, Usage
 from python_tofu.core.models import BaseStack
 from python_tofu.core.prune import PrunePlan
+from python_tofu.core.quota import QuotaPlan
 from python_tofu.core.renderer import BaseRenderer
 
 
@@ -35,6 +36,8 @@ class Provider:
     prune_sections: tuple[str, ...] = ()
     prune_explicit_only: tuple[str, ...] = ()
     prune_plan: Callable[[Any, tuple[str, ...]], PrunePlan] | None = None
+    quota_plan: Callable[[Any], QuotaPlan] | None = None
+    quota_apply: Callable[[Any, QuotaPlan], None] | None = None
     doctor_checks: Callable[[Any, Path], Sequence[CheckResult]] | None = None
 
     @property
@@ -52,6 +55,24 @@ class Provider:
     @property
     def has_doctor(self) -> bool:
         return self.doctor_checks is not None
+
+    @property
+    def can_manage_quota(self) -> bool:
+        return self.quota_plan is not None and self.quota_apply is not None
+
+    def plan_quota(self, stack: BaseStack) -> QuotaPlan:
+        """Compare the stack's declared quota overrides with the live values."""
+
+        if self.quota_plan is None:
+            raise TofuError(f"provider {self.name!r} does not support quota overrides")
+        return self.quota_plan(stack)
+
+    def apply_quota(self, stack: BaseStack, plan: QuotaPlan) -> None:
+        """Create or update every override in ``plan``."""
+
+        if self.quota_apply is None:
+            raise TofuError(f"provider {self.name!r} does not support quota overrides")
+        self.quota_apply(stack, plan)
 
     def run_doctor(self, stack: BaseStack, workdir: Path) -> tuple[CheckResult, ...]:
         """Run the provider's read-only preflight checks."""

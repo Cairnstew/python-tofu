@@ -8,6 +8,8 @@ from python_tofu.providers.gcp.limits import GCP_FREE_TIER, measure_usage
 from python_tofu.providers.gcp.live import live_measure_usage
 from python_tofu.providers.gcp.models import GCP_PRUNE_SECTIONS
 from python_tofu.providers.gcp.prune import discover
+from python_tofu.providers.gcp.quota import apply_plan as apply_quota_plan
+from python_tofu.providers.gcp.quota import discover as discover_quota
 from python_tofu.providers.gcp.renderer import GcpRenderer
 from python_tofu.providers.gcp.stack import GcpStack
 
@@ -24,6 +26,8 @@ GCP = register_provider(
         prune_sections=GCP_PRUNE_SECTIONS,
         prune_explicit_only=("project_iam", "projects"),
         prune_plan=discover,
+        quota_plan=discover_quota,
+        quota_apply=apply_quota_plan,
         doctor_checks=run_checks,
     )
 )

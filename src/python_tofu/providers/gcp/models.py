@@ -24,8 +24,10 @@ from python_tofu.providers.gcp.quirks import (
     FUNCTION_MEMORY_RE,
     PROJECT_ID_RE,
     PUBSUB_NAME_RE,
+    QUOTA_LIMIT_RE,
     SECRET_NAME_RE,
     SERVICE_ACCOUNT_ID_RE,
+    SERVICE_NAME_RE,
     TIMEOUT_RE,
     VOLUME_NAME_RE,
     literal_identifier,
@@ -237,6 +239,69 @@ class BillingBudget(TofuModel):
         if duplicates:
             raise ValueError("duplicate thresholds: " + ", ".join(str(item) for item in duplicates))
         return value
+
+
+class QuotaOverride(TofuModel):
+    """A Service Usage consumer quota override: a ceiling the cloud enforces.
+
+    GCP has no hard spend cap — a :class:`BillingBudget` only sends alerts. A
+    consumer quota override is enforced by the API itself, so once a project
+    reaches it the resource cannot be created at all.
+
+    ``metric`` and ``limit`` identify the limit in the Service Usage resource
+    (``…/consumerQuotaMetrics/<metric>/limits/<limit>``). ``limit`` is the
+    dimension path, e.g. ``/project/region``; ``metric`` is the full metric
+    name, e.g. ``compute.googleapis.com/cpus_all_regions``.
+
+    There is no ``google_service_usage_consumer_quota_override`` in the
+    ``hashicorp/google`` provider (it is beta-only), so this section is applied
+    through the Service Usage API by the ``quota`` command rather than rendered
+    as HCL.
+    """
+
+    project: str
+    service: str = Field(description="API service, e.g. compute.googleapis.com")
+    metric: str = Field(
+        description="Full metric name, e.g. compute.googleapis.com/cpus_all_regions"
+    )
+    limit: str = Field(description="Limit id (dimension path), e.g. /project/region")
+    value: float = Field(
+        ge=-1,
+        description="Override value; -1 means unlimited (the API's sentinel)",
+    )
+    force: bool = Field(
+        default=True,
+        description=(
+            "Apply even when current usage is above the new limit. Without it the "
+            "API refuses to lower a ceiling already exceeded."
+        ),
+    )
+
+    @field_validator("service")
+    @classmethod
+    def _valid_service(cls, value: str) -> str:
+        if not SERVICE_NAME_RE.match(value):
+            raise ValueError(f"service must look like '<name>.googleapis.com': {value!r}")
+        return value
+
+    @field_validator("limit")
+    @classmethod
+    def _valid_limit(cls, value: str) -> str:
+        if not QUOTA_LIMIT_RE.match(value):
+            raise ValueError(
+                f"limit must be a dimension path such as '/project' or '/project/region': {value!r}"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _metric_belongs_to_service(self) -> "QuotaOverride":
+        prefix = f"{self.service}/"
+        if not self.metric.startswith(prefix) or len(self.metric) == len(prefix):
+            raise ValueError(
+                f"metric {self.metric!r} must belong to service {self.service!r} "
+                f"(expected '{prefix}<metric>')"
+            )
+        return self
 
 
 class ServiceAccount(TofuModel):

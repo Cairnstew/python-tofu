@@ -41,6 +41,7 @@ through the IAM Credentials API. The source identity needs
 | `artifact_registry_repositories` | `list[ArtifactRegistryRepository]` | `[]` | Docker image repositories |
 | `pubsub_topics` | `list[PubSubTopic]` | `[]` | Pub/Sub topics |
 | `pubsub_subscriptions` | `list[PubSubSubscription]` | `[]` | Pull and push subscriptions |
+| `quota_overrides` | `list[QuotaOverride]` | `[]` | Service Usage ceilings the cloud enforces (see below) |
 | `name` | `str \| None` | `None` | Stack name for the default workdir and GCS prefix (CLI default: config stem) |
 | `backend` | `BackendConfig \| None` | `None` | State backend (omit for local default) |
 | `outputs` | `list[Output]` | `[]` | Values exposed after apply (see [`Output` and `ref`](#output-and-ref)) |
@@ -146,6 +147,48 @@ in raw HCL would be deleted as undeclared.
 Bucket objects cannot be imported by the Google provider, and project IAM
 bindings are excluded on purpose: an authoritative IAM sweep can remove human
 access. Both stay outside the supported section list.
+
+## Quota overrides
+
+A `BillingBudget` only sends alerts — GCP has no hard spend cap. A
+`QuotaOverride` is the ceiling the cloud itself enforces: once the project
+reaches it, the API refuses to create more of that resource, whoever applies.
+
+```python
+from python_tofu import QuotaOverride
+
+stack = GcpStack(
+    provider=provider,
+    quota_overrides=[
+        QuotaOverride(
+            project="my-project",
+            service="compute.googleapis.com",
+            metric="compute.googleapis.com/cpus_all_regions",
+            limit="/project/region",
+            value=0,
+        )
+    ],
+)
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `project` | `str` | required | Project the override applies to |
+| `service` | `str` | required | API service, e.g. `compute.googleapis.com` |
+| `metric` | `str` | required | Full metric name; must start with `<service>/` |
+| `limit` | `str` | required | Limit id: the dimension path from the limit resource, e.g. `/project/region` |
+| `value` | `float` | required | Override value; `-1` means unlimited (the API's sentinel) |
+| `force` | `bool` | `true` | Apply even when current usage is above the new ceiling |
+
+These are **not rendered as HCL**. The `google_service_usage_consumer_quota_override`
+resource is beta-only, while the Nix build mirrors only `hashicorp/google` and
+keeps `tofu init` offline, so the `quota` command reconciles the section through
+the Service Usage API — the same split `prune` uses for discovery. Run
+`python-tofu quota --config infra.py` to preview and `--apply` to write.
+
+Only declared overrides are created or updated. An override that exists in the
+project without a declaration is reported as a warning and left alone: an
+admin-set ceiling is not the stack's to remove.
 
 ## Stack profiles
 
