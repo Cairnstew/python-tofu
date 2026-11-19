@@ -28,6 +28,10 @@ SECRET_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,255}$")
 ARTIFACT_REPO_ID_RE = re.compile(r"^[a-z][a-z0-9._-]{1,62}$")
 VOLUME_NAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 PUBSUB_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9._~+%-]{2,254}$")
+#: A Google API service name, e.g. ``compute.googleapis.com``.
+SERVICE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]*\.googleapis\.com$")
+#: A Service Usage quota limit id: a dimension path such as ``/project/region``.
+QUOTA_LIMIT_RE = re.compile(r"^/(?:[a-z][a-z0-9_]*)(?:/[a-z][a-z0-9_]*)*$")
 
 
 def validate_role(role: str) -> str:

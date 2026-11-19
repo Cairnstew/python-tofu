@@ -172,6 +172,11 @@ in
     pubsub_topics = section "`google_pubsub_topic` resources, keyed by topic name.";
     pubsub_subscriptions = section "`google_pubsub_subscription` resources, keyed by name.";
     artifact_registry_repositories = section "Artifact Registry repositories, keyed by repository id.";
+    quota_overrides = section ''
+      Service Usage consumer quota overrides (ceilings the cloud enforces),
+      keyed by a local name. Applied by the `quota` command, not rendered as
+      HCL — the OpenTofu resource is beta-only.
+    '';
     outputs = section "OpenTofu outputs, keyed by output name.";
 
     # ── derived JSON view ─────────────────────────────────────────────
@@ -210,6 +215,7 @@ in
     pubsub_subscriptions = withIdentity "name" config.pubsub_subscriptions;
     artifact_registry_repositories =
       withIdentity "repository_id" config.artifact_registry_repositories;
+    quota_overrides = plain config.quota_overrides;
     outputs = withIdentity "name" config.outputs;
   }
   // optional "name" config.name

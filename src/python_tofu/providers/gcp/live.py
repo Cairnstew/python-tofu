@@ -261,6 +261,39 @@ def post_json(
         raise GoogleApiError(f"could not reach Google API {url}: {exc.reason}") from None
 
 
+def patch_json(
+    url: str,
+    token: str,
+    payload: dict[str, Any],
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """PATCH a JSON body and decode the JSON response."""
+
+    merged = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    if headers:
+        merged.update(headers)
+    scheme = urllib.parse.urlparse(url).scheme
+    if scheme not in ("https", "http"):
+        raise GoogleApiError(f"refusing to call a non-HTTP URL: {url}")
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(url, data=body, method="PATCH", headers=merged)
+    try:
+        # The scheme is restricted to http(s) immediately above.
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
+            return json.load(response)  # type: ignore[no-any-return]
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:300]
+        raise GoogleApiError(
+            f"Google API returned {exc.code} for {url}: {detail}", status=exc.code
+        ) from None
+    except urllib.error.URLError as exc:
+        raise GoogleApiError(f"could not reach Google API {url}: {exc.reason}") from None
+
+
 def list_assets(project: str, token: str, asset_type: str) -> list[dict[str, Any]]:
     """Return ``resource.data`` for every asset of ``asset_type`` in ``project``."""
 

@@ -226,6 +226,42 @@ class BaseCommand:
 
         typer.echo(f"Pruned {len(plan.resources)} resource(s).")
 
+    def quota(self, stack: BaseStack, *, dry_run: bool, auto_approve: bool = False) -> None:
+        """Print the declared quota overrides that differ live, and apply them."""
+
+        provider = self.ctx.provider
+        if not provider.can_manage_quota:
+            self.abort(f"provider {provider.name!r} does not support quota overrides")
+        try:
+            plan = provider.plan_quota(stack)
+        except TofuError as exc:
+            self.abort(str(exc))
+
+        for warning in plan.warnings:
+            typer.secho(f"Note: {warning}", fg=typer.colors.YELLOW, err=True)
+        if plan.empty:
+            typer.echo("Quota overrides match the declared stack.")
+            return
+
+        typer.echo(f"Quota plan: {len(plan.changes)} override(s)")
+        for change in plan.changes:
+            before = "none" if change.current is None else change.current
+            typer.echo(f"  {change.action}: {change.address} ({before} -> {change.desired})")
+        if dry_run:
+            typer.echo("Dry run: no overrides were changed (re-run with apply or --apply).")
+            return
+
+        if not auto_approve:
+            typer.confirm(
+                f"Apply {len(plan.changes)} quota override(s)?",
+                abort=True,
+            )
+        try:
+            provider.apply_quota(stack, plan)
+        except TofuError as exc:
+            self.abort(str(exc))
+        typer.echo(f"Applied {len(plan.changes)} quota override(s).")
+
     @staticmethod
     def _print_prune_plan(plan: PrunePlan, sections: tuple[str, ...]) -> None:
         typer.echo(f"Prune plan: {len(plan.resources)} undeclared resource(s)")

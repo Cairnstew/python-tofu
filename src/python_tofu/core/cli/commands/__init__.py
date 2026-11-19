@@ -16,6 +16,7 @@ from python_tofu.core.cli.commands import (
     plan,
     plugins,
     prune,
+    quota,
     render,
     validate,
 )
@@ -34,6 +35,11 @@ _BUILTINS = (
     ("apply", apply.create_app, "Render, init and apply the stack."),
     ("destroy", destroy.create_app, "Render, init and destroy the stack."),
     ("prune", prune.create_app, "Delete live resources the stack does not declare."),
+    (
+        "quota",
+        quota.create_app,
+        "Apply the declared quota overrides (hard usage ceilings).",
+    ),
     ("output", output.create_app, "Read outputs from the working directory."),
     ("limits", limits.create_app, "Show provider limits and measured usage."),
     ("plugins", plugins.create_app, "Show commands, providers and plugins."),
@@ -56,6 +62,7 @@ __all__ = [
     "plan",
     "plugins",
     "prune",
+    "quota",
     "render",
     "validate",
 ]
